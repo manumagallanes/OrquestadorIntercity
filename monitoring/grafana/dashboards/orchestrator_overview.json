@@ -678,6 +678,147 @@
       ],
       "title": "Errores de bajas (24h)",
       "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "simpod-json-datasource",
+        "uid": "orchestrator-api"
+      },
+      "description": "Listado en vivo de los incidentes registrados por el orquestador. Cada fila se obtiene desde /incidents y permite abrir el detalle completo.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "displayMode": "auto",
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "timestamp"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Timestamp"
+              },
+              {
+                "id": "link",
+                "value": {
+                  "title": "Ver JSON",
+                  "url": "http://localhost:8000/incidents"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "detail"
+            },
+            "properties": [
+              {
+                "id": "custom.displayMode",
+                "value": "json-view"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "id": 9,
+      "options": {
+        "footer": {
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "frameIndex": 0,
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Timestamp"
+          }
+        ]
+      },
+      "pluginVersion": "10.4.3",
+      "targets": [
+        {
+          "cacheDurationSeconds": 5,
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-api"
+          },
+          "fields": [
+            {
+              "jsonPath": "$[*].timestamp",
+              "name": "timestamp",
+              "type": "time"
+            },
+            {
+              "jsonPath": "$[*].customer_id",
+              "name": "customer_id",
+              "type": "number"
+            },
+            {
+              "jsonPath": "$[*].kind",
+              "name": "kind",
+              "type": "string"
+            },
+            {
+              "jsonPath": "$[*].action",
+              "name": "action",
+              "type": "string"
+            },
+            {
+              "jsonPath": "$[*]",
+              "name": "detail",
+              "type": "string"
+            }
+          ],
+          "format": "table",
+          "method": "GET",
+          "refId": "A",
+          "type": "table",
+          "urlPath": "/incidents"
+        }
+      ],
+      "title": "Incidentes recientes",
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "timestamp",
+                "reverse": true
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
     }
   ],
   "refresh": "10s",
