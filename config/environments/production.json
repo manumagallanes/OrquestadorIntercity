@@ -7,12 +7,30 @@
         "br": {
           "base_url": "https://isp-cube.prod.example.com/api",
           "timeout_seconds": 12.0,
-          "verify_tls": true
+          "verify_tls": true,
+          "retry": {
+            "max_attempts": 5,
+            "backoff_initial_seconds": 0.5,
+            "backoff_max_seconds": 8.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 3,
+            "recovery_timeout_seconds": 60.0
+          }
         },
         "mx": {
           "base_url": "https://isp-cube.mx.example.com/api",
           "timeout_seconds": 12.0,
-          "verify_tls": true
+          "verify_tls": true,
+          "retry": {
+            "max_attempts": 5,
+            "backoff_initial_seconds": 0.5,
+            "backoff_max_seconds": 8.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 3,
+            "recovery_timeout_seconds": 60.0
+          }
         }
       }
     },
@@ -22,12 +40,30 @@
         "br": {
           "base_url": "https://geogridmaps.prod.example.com/api",
           "timeout_seconds": 18.0,
-          "verify_tls": true
+          "verify_tls": true,
+          "retry": {
+            "max_attempts": 5,
+            "backoff_initial_seconds": 0.5,
+            "backoff_max_seconds": 10.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 3,
+            "recovery_timeout_seconds": 60.0
+          }
         },
         "mx": {
           "base_url": "https://geogridmaps.mx.example.com/api",
           "timeout_seconds": 18.0,
-          "verify_tls": true
+          "verify_tls": true,
+          "retry": {
+            "max_attempts": 5,
+            "backoff_initial_seconds": 0.5,
+            "backoff_max_seconds": 10.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 3,
+            "recovery_timeout_seconds": 60.0
+          }
         }
       }
     },
@@ -37,12 +73,30 @@
         "br": {
           "base_url": "https://smartolt.prod.example.com/api",
           "timeout_seconds": 18.0,
-          "verify_tls": true
+          "verify_tls": true,
+          "retry": {
+            "max_attempts": 5,
+            "backoff_initial_seconds": 0.5,
+            "backoff_max_seconds": 10.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 3,
+            "recovery_timeout_seconds": 60.0
+          }
         },
         "mx": {
           "base_url": "https://smartolt.mx.example.com/api",
           "timeout_seconds": 18.0,
-          "verify_tls": true
+          "verify_tls": true,
+          "retry": {
+            "max_attempts": 5,
+            "backoff_initial_seconds": 0.5,
+            "backoff_max_seconds": 10.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 3,
+            "recovery_timeout_seconds": 60.0
+          }
         }
       }
     }

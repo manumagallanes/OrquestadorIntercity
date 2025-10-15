@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -6,13 +7,19 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from typing_extensions import Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ConfigDict
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response
 
@@ -64,6 +71,22 @@ class AuditEntry(BaseModel):
 
 CONFIG_ROOT = Path(__file__).resolve().parent.parent / "config" / "environments"
 DEFAULT_ENVIRONMENT = "dev"
+RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
+
+
+class RetrySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_attempts: int = Field(default=3, ge=1)
+    backoff_initial_seconds: float = Field(default=0.2, ge=0.0)
+    backoff_max_seconds: float = Field(default=5.0, ge=0.1)
+
+
+class CircuitBreakerSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    failure_threshold: int = Field(default=5, ge=1)
+    recovery_timeout_seconds: float = Field(default=30.0, ge=1.0)
 
 
 class RegionSettings(BaseModel):
@@ -72,6 +95,8 @@ class RegionSettings(BaseModel):
     base_url: str
     timeout_seconds: float = Field(default=10.0, ge=0.1)
     verify_tls: bool = False
+    retry: RetrySettings = Field(default_factory=RetrySettings)
+    circuit_breaker: Optional[CircuitBreakerSettings] = None
 
 
 class ServiceSettings(BaseModel):
@@ -112,7 +137,9 @@ class EnvConfig(BaseModel):
     def _normalize_service(self, service: str) -> str:
         return service.lower()
 
-    def get_service_region(self, service: str, region: Optional[str] = None) -> RegionSettings:
+    def _resolve_region(
+        self, service: str, region: Optional[str] = None
+    ) -> Tuple[RegionSettings, str]:
         service_key = self._normalize_service(service)
         if service_key not in self.services:
             raise KeyError(f"Unknown service '{service}'")
@@ -127,18 +154,32 @@ class EnvConfig(BaseModel):
                 service_cfg.default_region,
             )
             region_name = service_cfg.default_region
-        return service_cfg.regions[region_name]
+        return service_cfg.regions[region_name], region_name
+
+    def resolve_service_region(
+        self, service: str, region: Optional[str] = None
+    ) -> Tuple[RegionSettings, str]:
+        return self._resolve_region(service, region)
+
+    def get_service_region(self, service: str, region: Optional[str] = None) -> RegionSettings:
+        region_cfg, _ = self._resolve_region(service, region)
+        return region_cfg
 
     def service_base_url(self, service: str, region: Optional[str] = None) -> str:
         return self.get_service_region(service, region).base_url
 
-    def http_client_kwargs(self, service: str, region: Optional[str] = None) -> Dict[str, Any]:
-        region_cfg = self.get_service_region(service, region)
-        return {
-            "base_url": region_cfg.base_url,
-            "timeout": region_cfg.timeout_seconds,
-            "verify": region_cfg.verify_tls,
-        }
+    def http_client_kwargs(
+        self, service: str, region: Optional[str] = None
+    ) -> Tuple[Dict[str, Any], str]:
+        region_cfg, region_name = self._resolve_region(service, region)
+        return (
+            {
+                "base_url": region_cfg.base_url,
+                "timeout": region_cfg.timeout_seconds,
+                "verify": region_cfg.verify_tls,
+            },
+            region_name,
+        )
 
     def override_default_region(
         self,
@@ -170,6 +211,39 @@ class EnvConfig(BaseModel):
     @property
     def smartolt_base_url(self) -> str:
         return self.service_base_url("smartolt")
+
+
+@dataclass
+class CircuitBreakerState:
+    failure_count: int = 0
+    opened_at: Optional[float] = None
+
+
+_circuit_states: Dict[str, CircuitBreakerState] = {}
+_circuit_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _get_circuit_state(key: str) -> CircuitBreakerState:
+    state = _circuit_states.get(key)
+    if state is None:
+        state = CircuitBreakerState()
+        _circuit_states[key] = state
+    return state
+
+
+def _get_circuit_lock(key: str) -> asyncio.Lock:
+    lock = _circuit_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _circuit_locks[key] = lock
+    return lock
+
+
+class RetryableHTTPStatus(Exception):
+    def __init__(self, status_code: int, payload: Any) -> None:
+        self.status_code = status_code
+        self.payload = payload
+        super().__init__(f"Retryable HTTP status: {status_code}")
 
 
 def _load_environment_from_file(env_name: str) -> Dict[str, Any]:
@@ -309,6 +383,30 @@ def record_audit(entry: AuditEntry) -> None:
         entry.dry_run,
         entry.detail,
     )
+
+
+def _safe_response_payload(response: httpx.Response) -> Any:
+    try:
+        return response.json()
+    except ValueError:
+        return response.text
+
+
+def _record_circuit_success(key: str) -> None:
+    if key not in _circuit_states:
+        return
+    state = _circuit_states[key]
+    state.failure_count = 0
+    state.opened_at = None
+
+
+def _record_circuit_failure(
+    key: str, breaker_cfg: CircuitBreakerSettings, *, timestamp: float
+) -> None:
+    state = _get_circuit_state(key)
+    state.failure_count += 1
+    if state.failure_count >= breaker_cfg.failure_threshold:
+        state.opened_at = timestamp
 
 
 def _is_blank(value: Any) -> bool:
@@ -482,24 +580,124 @@ async def metrics_middleware(request, call_next):
 
 
 async def fetch_json(
-    client: httpx.AsyncClient, method: str, url: str, **kwargs: Any
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    service: str,
+    settings: EnvConfig,
+    region_name: Optional[str] = None,
+    **kwargs: Any,
 ) -> Any:
-    response = await client.request(method, url, **kwargs)
-    logger.info(
-        "HTTP %s %s -> %s",
-        method.upper(),
-        response.request.url,
-        response.status_code,
+    region_cfg, resolved_region = settings.resolve_service_region(
+        service, region=region_name
     )
+    breaker_cfg = region_cfg.circuit_breaker
+    breaker_key = f"{service.lower()}:{resolved_region}"
+
+    if breaker_cfg:
+        breaker_lock = _get_circuit_lock(breaker_key)
+        async with breaker_lock:
+            state = _get_circuit_state(breaker_key)
+            if state.opened_at is not None:
+                elapsed = time.monotonic() - state.opened_at
+                if elapsed < breaker_cfg.recovery_timeout_seconds:
+                    retry_after = round(
+                        breaker_cfg.recovery_timeout_seconds - elapsed, 2
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail={
+                            "message": "Circuit breaker open for upstream service",
+                            "service": service,
+                            "region": resolved_region,
+                            "retry_after_seconds": retry_after,
+                        },
+                    )
+                state.opened_at = None
+                state.failure_count = 0
+        breaker_lock_for_updates = breaker_lock
+    else:
+        breaker_lock_for_updates = None
+
+    retry_cfg = region_cfg.retry
+    multiplier = max(retry_cfg.backoff_initial_seconds, 0.1)
+
+    response: Optional[httpx.Response] = None
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(retry_cfg.max_attempts),
+            wait=wait_exponential(multiplier=multiplier, max=retry_cfg.backoff_max_seconds),
+            retry=retry_if_exception_type((httpx.RequestError, RetryableHTTPStatus)),
+            reraise=True,
+        ):
+            with attempt:
+                response = await client.request(method, url, **kwargs)
+                logger.info(
+                    "HTTP %s %s -> %s",
+                    method.upper(),
+                    response.request.url,
+                    response.status_code,
+                )
+                if response.status_code in RETRYABLE_STATUS_CODES:
+                    payload = _safe_response_payload(response)
+                    raise RetryableHTTPStatus(response.status_code, payload)
+                break
+    except RetryableHTTPStatus as exc:
+        if breaker_cfg and breaker_lock_for_updates:
+            async with breaker_lock_for_updates:
+                _record_circuit_failure(
+                    breaker_key, breaker_cfg, timestamp=time.monotonic()
+                )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "message": "Upstream service returned error",
+                "service": service,
+                "region": resolved_region,
+                "status_code": exc.status_code,
+                "upstream_detail": exc.payload,
+            },
+        ) from exc
+    except httpx.RequestError as exc:
+        if breaker_cfg and breaker_lock_for_updates:
+            async with breaker_lock_for_updates:
+                _record_circuit_failure(
+                    breaker_key, breaker_cfg, timestamp=time.monotonic()
+                )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "Error communicating with upstream service",
+                "service": service,
+                "region": resolved_region,
+                "error": str(exc),
+            },
+        ) from exc
+
+    if response is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "message": "No response returned from upstream service",
+                "service": service,
+                "region": resolved_region,
+            },
+        )
+
+    if breaker_cfg and breaker_lock_for_updates:
+        async with breaker_lock_for_updates:
+            _record_circuit_success(breaker_key)
+
     if response.status_code >= 400:
-        detail: Any
-        try:
-            detail = response.json()
-        except ValueError:
-            detail = response.text
+        detail = _safe_response_payload(response)
         raise HTTPException(
             status_code=response.status_code,
-            detail={"upstream_detail": detail},
+            detail={
+                "service": service,
+                "region": resolved_region,
+                "upstream_detail": detail,
+            },
         )
     if response.status_code == status.HTTP_204_NO_CONTENT:
         return {}
@@ -519,9 +717,16 @@ async def sync_customer(
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     try:
-        isp_client_kwargs = settings.http_client_kwargs("isp")
+        isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
         async with httpx.AsyncClient(**isp_client_kwargs) as client:
-            customer = await fetch_json(client, "GET", f"/customers/{payload.customer_id}")
+            customer = await fetch_json(
+                client,
+                "GET",
+                f"/customers/{payload.customer_id}",
+                service="isp",
+                settings=settings,
+                region_name=isp_region,
+            )
 
         ensure_customer_ready(customer, action="sync")
 
@@ -540,12 +745,12 @@ async def sync_customer(
             },
         }
 
-        geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+        geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
         async with httpx.AsyncClient(**geogrid_client_kwargs) as client:
             response = await client.post("/features", json=feature_payload)
             logger.info(
                 "HTTP POST %s/features -> %s",
-                settings.geogrid_base_url,
+                geogrid_client_kwargs["base_url"],
                 response.status_code,
             )
             if response.status_code == status.HTTP_201_CREATED:
@@ -669,10 +874,15 @@ async def provision_onu(
     try:
         customer: Optional[Dict[str, Any]] = None
         if payload.customer_id is not None:
-            isp_client_kwargs = settings.http_client_kwargs("isp")
+            isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
             async with httpx.AsyncClient(**isp_client_kwargs) as client:
                 customer = await fetch_json(
-                    client, "GET", f"/customers/{payload.customer_id}"
+                    client,
+                    "GET",
+                    f"/customers/{payload.customer_id}",
+                    service="isp",
+                    settings=settings,
+                    region_name=isp_region,
                 )
             ensure_customer_ready(customer, action="provision")
             ensure_alignment(customer, payload)
@@ -708,11 +918,17 @@ async def provision_onu(
             "onu_sn": payload.onu_sn,
         }
 
-        smartolt_client_kwargs = settings.http_client_kwargs("smartolt")
+        smartolt_client_kwargs, smartolt_region = settings.http_client_kwargs("smartolt")
         async with httpx.AsyncClient(**smartolt_client_kwargs) as client:
             try:
                 current = await fetch_json(
-                    client, "GET", "/onus", params=verification_params
+                    client,
+                    "GET",
+                    "/onus",
+                    params=verification_params,
+                    service="smartolt",
+                    settings=settings,
+                    region_name=smartolt_region,
                 )
             except HTTPException as exc:
                 if exc.status_code not in {status.HTTP_404_NOT_FOUND, status.HTTP_204_NO_CONTENT}:
@@ -749,7 +965,7 @@ async def provision_onu(
             auth_resp = await client.post("/onu/authorize", json=request_body)
             logger.info(
                 "HTTP POST %s/onu/authorize -> %s",
-                settings.smartolt_base_url,
+                smartolt_client_kwargs["base_url"],
                 auth_resp.status_code,
             )
             if auth_resp.status_code == status.HTTP_409_CONFLICT:
@@ -760,7 +976,13 @@ async def provision_onu(
                     detail.get("onu_id"),
                 )
                 verification = await fetch_json(
-                    client, "GET", "/onus", params=verification_params
+                    client,
+                    "GET",
+                    "/onus",
+                    params=verification_params,
+                    service="smartolt",
+                    settings=settings,
+                    region_name=smartolt_region,
                 )
                 PROVISION_COUNTER.labels(result="already_authorized").inc()
                 result = {
@@ -793,7 +1015,13 @@ async def provision_onu(
                 )
 
             verification = await fetch_json(
-                client, "GET", "/onus", params=verification_params
+                client,
+                "GET",
+                "/onus",
+                params=verification_params,
+                service="smartolt",
+                settings=settings,
+                region_name=smartolt_region,
             )
             authorization = auth_resp.json()
 
@@ -866,15 +1094,22 @@ async def decommission_customer(
     timestamp = datetime.now(timezone.utc).isoformat()
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
     try:
-        isp_client_kwargs = settings.http_client_kwargs("isp")
+        isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
         async with httpx.AsyncClient(**isp_client_kwargs) as client:
-            customer = await fetch_json(client, "GET", f"/customers/{payload.customer_id}")
+            customer = await fetch_json(
+                client,
+                "GET",
+                f"/customers/{payload.customer_id}",
+                service="isp",
+                settings=settings,
+                region_name=isp_region,
+            )
 
         ensure_customer_inactive(customer)
         ensure_customer_has_network_keys(customer, action="decommission")
 
         feature: Optional[Dict[str, Any]] = None
-        geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+        geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
         async with httpx.AsyncClient(**geogrid_client_kwargs) as geogrid_client:
             try:
                 feature = await fetch_json(
@@ -882,6 +1117,9 @@ async def decommission_customer(
                     "GET",
                     "/features/search",
                     params={"customer_id": payload.customer_id},
+                    service="geogrid",
+                    settings=settings,
+                    region_name=geogrid_region,
                 )
             except HTTPException as exc:
                 if exc.status_code == status.HTTP_404_NOT_FOUND:
@@ -896,6 +1134,9 @@ async def decommission_customer(
                         "GET",
                         "/features/search",
                         params={"onu_sn": customer["onu_sn"]},
+                        service="geogrid",
+                        settings=settings,
+                        region_name=geogrid_region,
                     )
                 except HTTPException as exc:
                     if exc.status_code != status.HTTP_404_NOT_FOUND:
@@ -910,13 +1151,21 @@ async def decommission_customer(
                 },
             )
 
-        smartolt_client_kwargs = settings.http_client_kwargs("smartolt")
+        smartolt_client_kwargs, smartolt_region = settings.http_client_kwargs("smartolt")
         async with httpx.AsyncClient(**smartolt_client_kwargs) as smart_client:
             params = {
                 "olt_id": customer["olt_id"],
                 "onu_sn": customer["onu_sn"],
             }
-            onus_data = await fetch_json(smart_client, "GET", "/onus", params=params)
+            onus_data = await fetch_json(
+                smart_client,
+                "GET",
+                "/onus",
+                params=params,
+                service="smartolt",
+                settings=settings,
+                region_name=smartolt_region,
+            )
             existing_onus = onus_data.get("onus", []) if isinstance(onus_data, dict) else []
 
         if not existing_onus:
@@ -953,12 +1202,12 @@ async def decommission_customer(
 
         geogrid_result = "not_found"
         if feature:
-            geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+            geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
             async with httpx.AsyncClient(**geogrid_client_kwargs) as geogrid_client:
                 resp = await geogrid_client.delete(f"/features/{feature['id']}")
                 logger.info(
                     "HTTP DELETE %s/features/%s -> %s",
-                    settings.geogrid_base_url,
+                    geogrid_client_kwargs["base_url"],
                     feature["id"],
                     resp.status_code,
                 )
@@ -976,7 +1225,7 @@ async def decommission_customer(
         smartolt_result = "not_found"
         if existing_onus:
             onu = existing_onus[0]
-            smartolt_client_kwargs = settings.http_client_kwargs("smartolt")
+            smartolt_client_kwargs, smartolt_region = settings.http_client_kwargs("smartolt")
             async with httpx.AsyncClient(**smartolt_client_kwargs) as smart_client:
                 delete_resp = await smart_client.delete(
                     "/onus",
@@ -989,7 +1238,7 @@ async def decommission_customer(
                 )
                 logger.info(
                     "HTTP DELETE %s/onus -> %s",
-                    settings.smartolt_base_url,
+                    smartolt_client_kwargs["base_url"],
                     delete_resp.status_code,
                 )
                 if delete_resp.status_code != status.HTTP_200_OK:
@@ -1061,9 +1310,16 @@ async def decommission_customer(
     summary="Return GeoJSON FeatureCollection from GeoGrid",
 )
 async def clients_geojson(settings: EnvConfig = Depends(get_settings)) -> Dict[str, Any]:
-    geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+    geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
     async with httpx.AsyncClient(**geogrid_client_kwargs) as client:
-        features = await fetch_json(client, "GET", "/features")
+        features = await fetch_json(
+            client,
+            "GET",
+            "/features",
+            service="geogrid",
+            settings=settings,
+            region_name=geogrid_region,
+        )
 
     collection = {
         "type": "FeatureCollection",
@@ -1102,6 +1358,12 @@ async def get_config(
             "base_url": region_cfg.base_url,
             "timeout_seconds": region_cfg.timeout_seconds,
             "verify_tls": region_cfg.verify_tls,
+            "retry": region_cfg.retry.model_dump(),
+            "circuit_breaker": (
+                region_cfg.circuit_breaker.model_dump()
+                if region_cfg.circuit_breaker
+                else None
+            ),
         }
     return {
         "environment": settings.env_name,
@@ -1139,19 +1401,21 @@ async def update_config(
     summary="Reset all mocks to their default state",
 )
 async def reset_mocks(settings: EnvConfig = Depends(get_settings)) -> Dict[str, Any]:
-    targets = {
-        "isp": settings.isp_base_url,
-        "geogrid": settings.geogrid_base_url,
-        "smartolt": settings.smartolt_base_url,
-    }
     results: Dict[str, Any] = {}
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for name, base in targets.items():
+    for service_name in ("isp", "geogrid", "smartolt"):
+        client_kwargs, region = settings.http_client_kwargs(service_name)
+        async with httpx.AsyncClient(**client_kwargs) as client:
             try:
-                resp = await client.post(f"{base}/reset")
-                results[name] = {"status": resp.status_code}
+                resp = await client.post("/reset")
+                results[service_name] = {
+                    "status": resp.status_code,
+                    "region": region,
+                }
             except httpx.HTTPError as exc:
-                results[name] = {"error": str(exc)}
+                results[service_name] = {
+                    "error": str(exc),
+                    "region": region,
+                }
     INCIDENT_LOG.clear()
     AUDIT_LOG.clear()
     INCIDENT_GAUGE.set(0)

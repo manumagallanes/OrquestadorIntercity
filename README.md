@@ -56,9 +56,11 @@ Ese endpoint llama al `/reset` de cada mock y limpia auditorías/incidentados en
 
 El orquestador sabe cargar configuraciones según el entorno elegido. Todos los archivos viven en `config/environments/`:
 
+- Si querés overrides rápidos, copiá `.env.example` a `.env` y ajustá variables. Cualquier valor allí tiene prioridad sobre los JSON.
 - `dev.json` – apunta a los mocks locales (sin TLS, timeout corto).
 - `staging.json` – ejemplo con URLs HTTPS y distintas regiones (BR, MX).
 - `production.json` – placeholders que podés adaptar a tus backends reales.
+- Cada región define `retry` (intentos + backoff exponencial) y `circuit_breaker` (umbral de fallas, ventana de recuperación). Esos valores se usan automáticamente por el orquestador para reintentar o abrir el breaker cuando los upstream fallan repetidamente.
 
 ### Variables clave
 
@@ -246,6 +248,7 @@ Prometheus queda disponible en http://localhost:9090; los métricos más útiles
   - Ajustá los JSON de `config/environments/`.
   - Cargá secrets o tokens con las variables de entorno que correspondan.
   - Activá `verify_tls=true` y extendé los timeouts según la latencia real.
+- **Reintentos y circuit breakers**: si un upstream empieza a fallar, el orquestador reintenta con backoff exponencial y abre un breaker según la configuración del entorno. Ajustá `max_attempts`, `backoff_*` y `failure_threshold` en los JSON para reflejar las políticas reales.
 - **Manejo de datos**: todos los mocks están en memoria, así que un `docker compose down` borra el estado. Si necesitás persistencia, podés montar volúmenes o guardar backups.
 - **Auditoría/Incidentes**: se guardan en buffers en memoria (por defecto 500 y 200 entradas). El `/reset` los limpia.
 - **Extender la lógica**: si querés propagar parámetros tipo `simulate` desde el orquestador hacia los mocks, el lugar indicado es `orchestrator/main.py` dentro del endpoint correspondiente.

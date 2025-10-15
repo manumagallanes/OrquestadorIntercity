@@ -7,7 +7,16 @@
         "default": {
           "base_url": "http://isp-mock:8001",
           "timeout_seconds": 10.0,
-          "verify_tls": false
+          "verify_tls": false,
+          "retry": {
+            "max_attempts": 3,
+            "backoff_initial_seconds": 0.2,
+            "backoff_max_seconds": 2.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 5,
+            "recovery_timeout_seconds": 30.0
+          }
         }
       }
     },
@@ -17,7 +26,16 @@
         "default": {
           "base_url": "http://geogrid-mock:8002",
           "timeout_seconds": 10.0,
-          "verify_tls": false
+          "verify_tls": false,
+          "retry": {
+            "max_attempts": 3,
+            "backoff_initial_seconds": 0.2,
+            "backoff_max_seconds": 2.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 5,
+            "recovery_timeout_seconds": 30.0
+          }
         }
       }
     },
@@ -27,7 +45,16 @@
         "default": {
           "base_url": "http://smartolt-mock:8003",
           "timeout_seconds": 10.0,
-          "verify_tls": false
+          "verify_tls": false,
+          "retry": {
+            "max_attempts": 3,
+            "backoff_initial_seconds": 0.2,
+            "backoff_max_seconds": 2.0
+          },
+          "circuit_breaker": {
+            "failure_threshold": 5,
+            "recovery_timeout_seconds": 30.0
+          }
         }
       }
     }
