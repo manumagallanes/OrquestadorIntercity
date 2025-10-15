@@ -176,6 +176,107 @@ Los `simulate` permiten comprobar manejo de `400`, `404`, `409`, `429` y timeout
 - Consultá la bitácora con `GET /audits?limit=200&action=provision&user=pepito`.
 - El buffer (por defecto 500 entradas) se limpia con `POST /reset`. Podés ajustar el header esperado cambiando la variable `ORCHESTRATOR_USER_HEADER`.
 
+### Suite de pruebas manuales
+1. **Reset inicial**
+   ```bash
+   docker compose up --build
+   curl -X POST http://localhost:8000/reset
+   ```
+   Esperado: cada mock responde `{"status":200}` y los servicios confirman salud en `/health`.
+
+2. **Sincronización básica (cliente 202)**
+   ```bash
+   curl -X POST http://localhost:8000/sync/customer \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":202}'
+   curl -X POST http://localhost:8000/sync/customer \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":202}'
+   curl http://localhost:8002/features
+   curl http://localhost:8000/audits?action=sync
+   ```
+   Esperado: primera llamada `action=created`, segunda `action=updated`; la feature aparece en GeoGrid y la auditoría registra ambas entradas.
+
+3. **Flag de integración deshabilitado**
+   ```bash
+   curl -X PATCH http://localhost:8001/customers/202/flag \
+     -H 'Content-Type: application/json' \
+     -d '{"integration_enabled":false}'
+   curl -X POST http://localhost:8000/sync/customer \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":202}'
+   curl http://localhost:8000/incidents
+   ```
+   Esperado: respuesta `412` con `reason=integration_disabled` y registro del incidente homónimo. Restaurar el flag a `true` antes de continuar.
+
+4. **Datos incompletos (cliente 404)**
+   ```bash
+   curl -X POST http://localhost:8000/sync/customer \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":404}'
+   ```
+   Esperado: `422` con `missing_fields` (`lat`, `lon`) e incidente `missing_fields`.
+
+5. **Conflicto en GeoGrid**
+   ```bash
+   curl -X POST http://localhost:8002/features \
+     -H 'Content-Type: application/json' \
+     -d '{"name":"Manual conflict","location":{"lat":-23.5505,"lon":-46.6333},"attrs":{"customer_id":202,"address":"Rua dos Testes 456","city":"São Paulo","odb":"CAIXA-22B","olt_id":2,"board":3,"pon":4,"onu_sn":"TESTSN00002"}}'
+   curl -X POST http://localhost:8000/sync/customer \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":202}'
+   ```
+   Esperado: el orquestador recibe 409, toma el `feature_id` y responde `action=updated` tras ejecutar el `PUT`.
+
+6. **Provisionar ONU e idempotencia**
+   ```bash
+   curl -X POST http://localhost:8000/provision/onu \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":202,"olt_id":2,"board":3,"pon_port":4,"onu_sn":"TESTSN00002","dry_run":false}'
+   curl -X POST http://localhost:8000/provision/onu \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":202,"olt_id":2,"board":3,"pon_port":4,"onu_sn":"TESTSN00002","dry_run":false}'
+   ```
+   Esperado: primera respuesta `"authorized"`, segunda `"already_authorized"`. Revisar auditoría (`action=provision`) y métricas (`orchestrator_provision_total`).
+
+7. **Mismatch de hardware**
+   ```bash
+   curl -X POST http://localhost:8000/provision/onu \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":202,"olt_id":2,"board":3,"pon_port":9,"onu_sn":"TESTSN00002","dry_run":false}'
+   curl http://localhost:8000/incidents
+   ```
+   Esperado: respuesta `409` con `hardware_mismatch` e incidente del mismo tipo.
+
+8. **Errores SmartOLT simulados**
+   - El orquestador no reenvía `simulate`, por lo que los errores HTTP se ejercitan directamente contra el mock:
+     ```bash
+     curl -X POST 'http://localhost:8003/onu/authorize?simulate=400' \
+       -H 'Content-Type: application/json' \
+       -d '{"olt_id":2,"board":3,"pon_port":4,"onu_sn":"TESTSN00002"}'
+     curl 'http://localhost:8003/onus?simulate=timeout'
+     ```
+     Esperado: la primera llamada devuelve 400 simulado, la segunda provoca un timeout (>10 s). Para que `/provision/onu` soporte estos flags habría que modificar el orquestador y propagar la query string.
+
+9. **Baja técnica (cliente 707)**
+   ```bash
+   curl -X POST http://localhost:8000/decommission/customer \
+     -H 'Content-Type: application/json' \
+     -d '{"customer_id":707,"dry_run":false}'
+   curl http://localhost:8000/incidents
+   ```
+   Esperado: si no existen feature ni ONU, la respuesta indica `status":"not_found"` y se registran incidentes `decommission_missing_feature` y `decommission_missing_onu`. Tras sincronizar/provisionar previamente se valida la rama de eliminación real.
+
+10. **Auditoría e incidentes**
+    ```bash
+    curl http://localhost:8000/audits?limit=200
+    curl http://localhost:8000/incidents
+    ```
+    Esperado: todas las pruebas quedan trazadas con usuario (`X-Orchestrator-User`) y detalle. `POST /reset` limpia los buffers.
+
+11. **UI Streamlit**
+    - Abrí http://localhost:8501 y repetí los flujos de sincronización, provisión y baja técnica. Las secciones **Features** y **Auditoría** permiten validar que los resultados coinciden con los obtenidos por `curl`.
+
 ## Estructura de archivos relevante
 - `orchestrator/main.py` – FastAPI principal que coordina los servicios
 - `mocks/isp_cube/main.py` – Mock de ISP-Cube
