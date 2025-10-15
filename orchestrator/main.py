@@ -1,16 +1,18 @@
+import json
 import logging
 import time
 import os
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from typing_extensions import Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response
 
@@ -60,22 +62,154 @@ class AuditEntry(BaseModel):
     timestamp: str
 
 
+CONFIG_ROOT = Path(__file__).resolve().parent.parent / "config" / "environments"
+DEFAULT_ENVIRONMENT = "dev"
+
+
+class RegionSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str
+    timeout_seconds: float = Field(default=10.0, ge=0.1)
+    verify_tls: bool = False
+
+
+class ServiceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default_region: str = "default"
+    regions: Dict[str, RegionSettings]
+
+    def update_region(
+        self,
+        region_name: str,
+        *,
+        base_url: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        verify_tls: Optional[bool] = None,
+    ) -> None:
+        if region_name not in self.regions:
+            raise KeyError(f"Region '{region_name}' not defined for service")
+        region_cfg = self.regions[region_name]
+        updates: Dict[str, Any] = {}
+        if base_url is not None:
+            updates["base_url"] = base_url
+        if timeout_seconds is not None:
+            updates["timeout_seconds"] = timeout_seconds
+        if verify_tls is not None:
+            updates["verify_tls"] = verify_tls
+        if updates:
+            self.regions[region_name] = region_cfg.model_copy(update=updates)
+
+
 class EnvConfig(BaseModel):
-    isp_base_url: str
-    geogrid_base_url: str
-    smartolt_base_url: str
+    model_config = ConfigDict(extra="ignore")
+
+    env_name: str
     dry_run_default: bool
+    services: Dict[str, ServiceSettings]
+
+    def _normalize_service(self, service: str) -> str:
+        return service.lower()
+
+    def get_service_region(self, service: str, region: Optional[str] = None) -> RegionSettings:
+        service_key = self._normalize_service(service)
+        if service_key not in self.services:
+            raise KeyError(f"Unknown service '{service}'")
+        service_cfg = self.services[service_key]
+        env_region = os.getenv(f"{service_key.upper()}_REGION")
+        region_name = (region or env_region or service_cfg.default_region).lower()
+        if region_name not in service_cfg.regions:
+            logger.warning(
+                "Region '%s' not defined for service '%s'; using default '%s'",
+                region_name,
+                service_key,
+                service_cfg.default_region,
+            )
+            region_name = service_cfg.default_region
+        return service_cfg.regions[region_name]
+
+    def service_base_url(self, service: str, region: Optional[str] = None) -> str:
+        return self.get_service_region(service, region).base_url
+
+    def http_client_kwargs(self, service: str, region: Optional[str] = None) -> Dict[str, Any]:
+        region_cfg = self.get_service_region(service, region)
+        return {
+            "base_url": region_cfg.base_url,
+            "timeout": region_cfg.timeout_seconds,
+            "verify": region_cfg.verify_tls,
+        }
+
+    def override_default_region(
+        self,
+        service: str,
+        *,
+        base_url: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        verify_tls: Optional[bool] = None,
+    ) -> None:
+        service_key = self._normalize_service(service)
+        if service_key not in self.services:
+            raise KeyError(f"Unknown service '{service}'")
+        service_cfg = self.services[service_key]
+        service_cfg.update_region(
+            service_cfg.default_region,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            verify_tls=verify_tls,
+        )
+
+    @property
+    def isp_base_url(self) -> str:
+        return self.service_base_url("isp")
+
+    @property
+    def geogrid_base_url(self) -> str:
+        return self.service_base_url("geogrid")
+
+    @property
+    def smartolt_base_url(self) -> str:
+        return self.service_base_url("smartolt")
+
+
+def _load_environment_from_file(env_name: str) -> Dict[str, Any]:
+    config_path = CONFIG_ROOT / f"{env_name}.json"
+    if not config_path.exists():
+        raise FileNotFoundError(f"Configuration file not found for env '{env_name}'")
+    with config_path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def load_env_config() -> EnvConfig:
-    dry_run_env = os.getenv("DRY_RUN", "false").lower()
-    dry_run_default = dry_run_env in {"1", "true", "yes", "on"}
-    return EnvConfig(
-        isp_base_url=os.getenv("ISP_BASE_URL", "http://isp-mock:8001"),
-        geogrid_base_url=os.getenv("GEOGRID_BASE_URL", "http://localhost:8002"),  # Apunta al mock local
-        smartolt_base_url=os.getenv("SMARTOLT_BASE_URL", "http://smartolt-mock:8003"),
-        dry_run_default=dry_run_default,
-    )
+    env_name = os.getenv("ORCHESTRATOR_ENV", DEFAULT_ENVIRONMENT).strip().lower() or DEFAULT_ENVIRONMENT
+    try:
+        data = _load_environment_from_file(env_name)
+    except FileNotFoundError:
+        logger.warning(
+            "Environment '%s' not found. Falling back to '%s'",
+            env_name,
+            DEFAULT_ENVIRONMENT,
+        )
+        env_name = DEFAULT_ENVIRONMENT
+        data = _load_environment_from_file(env_name)
+
+    data["env_name"] = env_name
+    config = EnvConfig.model_validate(data)
+
+    override_map = {
+        "isp": os.getenv("ISP_BASE_URL"),
+        "geogrid": os.getenv("GEOGRID_BASE_URL"),
+        "smartolt": os.getenv("SMARTOLT_BASE_URL"),
+    }
+    for service_name, base_override in override_map.items():
+        if base_override:
+            config.override_default_region(service_name, base_url=base_override)
+
+    dry_run_env = os.getenv("DRY_RUN")
+    if dry_run_env is not None:
+        config.dry_run_default = dry_run_env.lower() in {"1", "true", "yes", "on"}
+
+    return config
 
 
 SETTINGS = load_env_config()
@@ -385,9 +519,8 @@ async def sync_customer(
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     try:
-        async with httpx.AsyncClient(
-            base_url=settings.isp_base_url, timeout=10.0
-        ) as client:
+        isp_client_kwargs = settings.http_client_kwargs("isp")
+        async with httpx.AsyncClient(**isp_client_kwargs) as client:
             customer = await fetch_json(client, "GET", f"/customers/{payload.customer_id}")
 
         ensure_customer_ready(customer, action="sync")
@@ -407,9 +540,8 @@ async def sync_customer(
             },
         }
 
-        async with httpx.AsyncClient(
-            base_url=settings.geogrid_base_url, timeout=10.0
-        ) as client:
+        geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+        async with httpx.AsyncClient(**geogrid_client_kwargs) as client:
             response = await client.post("/features", json=feature_payload)
             logger.info(
                 "HTTP POST %s/features -> %s",
@@ -537,9 +669,8 @@ async def provision_onu(
     try:
         customer: Optional[Dict[str, Any]] = None
         if payload.customer_id is not None:
-            async with httpx.AsyncClient(
-                base_url=settings.isp_base_url, timeout=10.0
-            ) as client:
+            isp_client_kwargs = settings.http_client_kwargs("isp")
+            async with httpx.AsyncClient(**isp_client_kwargs) as client:
                 customer = await fetch_json(
                     client, "GET", f"/customers/{payload.customer_id}"
                 )
@@ -577,9 +708,8 @@ async def provision_onu(
             "onu_sn": payload.onu_sn,
         }
 
-        async with httpx.AsyncClient(
-            base_url=settings.smartolt_base_url, timeout=10.0
-        ) as client:
+        smartolt_client_kwargs = settings.http_client_kwargs("smartolt")
+        async with httpx.AsyncClient(**smartolt_client_kwargs) as client:
             try:
                 current = await fetch_json(
                     client, "GET", "/onus", params=verification_params
@@ -736,16 +866,16 @@ async def decommission_customer(
     timestamp = datetime.now(timezone.utc).isoformat()
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
     try:
-        async with httpx.AsyncClient(base_url=settings.isp_base_url, timeout=10.0) as client:
+        isp_client_kwargs = settings.http_client_kwargs("isp")
+        async with httpx.AsyncClient(**isp_client_kwargs) as client:
             customer = await fetch_json(client, "GET", f"/customers/{payload.customer_id}")
 
         ensure_customer_inactive(customer)
         ensure_customer_has_network_keys(customer, action="decommission")
 
         feature: Optional[Dict[str, Any]] = None
-        async with httpx.AsyncClient(
-            base_url=settings.geogrid_base_url, timeout=10.0
-        ) as geogrid_client:
+        geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+        async with httpx.AsyncClient(**geogrid_client_kwargs) as geogrid_client:
             try:
                 feature = await fetch_json(
                     geogrid_client,
@@ -780,9 +910,8 @@ async def decommission_customer(
                 },
             )
 
-        async with httpx.AsyncClient(
-            base_url=settings.smartolt_base_url, timeout=10.0
-        ) as smart_client:
+        smartolt_client_kwargs = settings.http_client_kwargs("smartolt")
+        async with httpx.AsyncClient(**smartolt_client_kwargs) as smart_client:
             params = {
                 "olt_id": customer["olt_id"],
                 "onu_sn": customer["onu_sn"],
@@ -824,9 +953,8 @@ async def decommission_customer(
 
         geogrid_result = "not_found"
         if feature:
-            async with httpx.AsyncClient(
-                base_url=settings.geogrid_base_url, timeout=10.0
-            ) as geogrid_client:
+            geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+            async with httpx.AsyncClient(**geogrid_client_kwargs) as geogrid_client:
                 resp = await geogrid_client.delete(f"/features/{feature['id']}")
                 logger.info(
                     "HTTP DELETE %s/features/%s -> %s",
@@ -848,9 +976,8 @@ async def decommission_customer(
         smartolt_result = "not_found"
         if existing_onus:
             onu = existing_onus[0]
-            async with httpx.AsyncClient(
-                base_url=settings.smartolt_base_url, timeout=10.0
-            ) as smart_client:
+            smartolt_client_kwargs = settings.http_client_kwargs("smartolt")
+            async with httpx.AsyncClient(**smartolt_client_kwargs) as smart_client:
                 delete_resp = await smart_client.delete(
                     "/onus",
                     params={
@@ -934,9 +1061,8 @@ async def decommission_customer(
     summary="Return GeoJSON FeatureCollection from GeoGrid",
 )
 async def clients_geojson(settings: EnvConfig = Depends(get_settings)) -> Dict[str, Any]:
-    async with httpx.AsyncClient(
-        base_url=settings.geogrid_base_url, timeout=10.0
-    ) as client:
+    geogrid_client_kwargs = settings.http_client_kwargs("geogrid")
+    async with httpx.AsyncClient(**geogrid_client_kwargs) as client:
         features = await fetch_json(client, "GET", "/features")
 
     collection = {
@@ -968,9 +1094,20 @@ async def get_config(
     settings: EnvConfig = Depends(get_settings),
     state: RuntimeState = Depends(get_runtime_state),
 ) -> Dict[str, Any]:
+    services_snapshot: Dict[str, Any] = {}
+    for service_name, service_cfg in settings.services.items():
+        region_cfg = settings.get_service_region(service_name)
+        services_snapshot[service_name] = {
+            "default_region": service_cfg.default_region,
+            "base_url": region_cfg.base_url,
+            "timeout_seconds": region_cfg.timeout_seconds,
+            "verify_tls": region_cfg.verify_tls,
+        }
     return {
+        "environment": settings.env_name,
         "dry_run": state.dry_run,
-        "endpoints": {
+        "services": services_snapshot,
+        "endpoints": {  # Legacy shape for backward compatibility
             "isp_base_url": settings.isp_base_url,
             "geogrid_base_url": settings.geogrid_base_url,
             "smartolt_base_url": settings.smartolt_base_url,

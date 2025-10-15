@@ -1,0 +1,50 @@
+{
+  "dry_run_default": true,
+  "services": {
+    "isp": {
+      "default_region": "br",
+      "regions": {
+        "br": {
+          "base_url": "https://isp-cube.example.com/api",
+          "timeout_seconds": 15.0,
+          "verify_tls": true
+        },
+        "mx": {
+          "base_url": "https://mx-isp.example.com/api",
+          "timeout_seconds": 15.0,
+          "verify_tls": true
+        }
+      }
+    },
+    "geogrid": {
+      "default_region": "br",
+      "regions": {
+        "br": {
+          "base_url": "https://geogridmaps.example.com/api",
+          "timeout_seconds": 20.0,
+          "verify_tls": true
+        },
+        "mx": {
+          "base_url": "https://geogridmx.example.com/api",
+          "timeout_seconds": 20.0,
+          "verify_tls": true
+        }
+      }
+    },
+    "smartolt": {
+      "default_region": "br",
+      "regions": {
+        "br": {
+          "base_url": "https://smartolt.example.com/api",
+          "timeout_seconds": 20.0,
+          "verify_tls": true
+        },
+        "mx": {
+          "base_url": "https://smartoltmx.example.com/api",
+          "timeout_seconds": 20.0,
+          "verify_tls": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "dry_run_default": true,
+  "services": {
+    "isp": {
+      "default_region": "default",
+      "regions": {
+        "default": {
+          "base_url": "http://isp-mock:8001",
+          "timeout_seconds": 10.0,
+          "verify_tls": false
+        }
+      }
+    },
+    "geogrid": {
+      "default_region": "default",
+      "regions": {
+        "default": {
+          "base_url": "http://geogrid-mock:8002",
+          "timeout_seconds": 10.0,
+          "verify_tls": false
+        }
+      }
+    },
+    "smartolt": {
+      "default_region": "default",
+      "regions": {
+        "default": {
+          "base_url": "http://smartolt-mock:8003",
+          "timeout_seconds": 10.0,
+          "verify_tls": false
+        }
+      }
+    }
+  }
+}

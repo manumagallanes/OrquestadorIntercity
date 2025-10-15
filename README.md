@@ -111,6 +111,20 @@ curl -X POST http://localhost:8000/reset
 ```
 El orquestador invoca `/reset` en cada mock y deja los estados en memoria limpios. También podés llamar `/reset` directamente en cada mock si querés hacerlo por separado.
 
+## Configuración por entorno
+- Las credenciales y endpoints se definen en archivos JSON por entorno dentro de `config/environments/{dev,staging,production}.json`. Cada servicio incluye regiones con sus `base_url`, `timeout_seconds` y si deben verificar TLS.
+- El orquestador arranca en modo `dev` por defecto (`ORCHESTRATOR_ENV=dev`). Podés apuntar a staging o producción configurando `ORCHESTRATOR_ENV=staging` o `ORCHESTRATOR_ENV=production` antes de iniciar `uvicorn`.
+- Si necesitás seleccionar una región distinta a la predeterminada de cada entorno, seteá variables como `ISP_REGION=mx`, `GEOGRID_REGION=mx` o `SMARTOLT_REGION=mx`. Esto toma la configuración del bloque correspondiente.
+- Los overrides finos (por ejemplo para pruebas locales) siguen disponibles mediante variables como `ISP_BASE_URL`, `GEOGRID_BASE_URL`, `SMARTOLT_BASE_URL` o `DRY_RUN`. Estas variables actualizan el endpoint por defecto de su servicio en el entorno elegido.
+- Ejemplo rápido para probar staging región México:
+  ```bash
+  ORCHESTRATOR_ENV=staging \
+  ISP_REGION=mx \
+  GEOGRID_REGION=mx \
+  SMARTOLT_REGION=mx \
+  uvicorn orchestrator.main:app --reload
+  ```
+
 ## Simulación de errores
 - ISP mock: `GET /customers/101?simulate=429`
 - GeoGrid mock: `POST /features?simulate=429`
