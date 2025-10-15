@@ -1,0 +1,100 @@
+version: "3.9"
+
+services:
+  orchestrator:
+    build: .
+    command:
+      - uvicorn
+      - orchestrator.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    env_file: .env.dev
+    depends_on:
+      - isp-mock
+      - geogrid-mock
+      - smartolt-mock
+    ports:
+      - "8000:8000"
+
+  isp-mock:
+    build: .
+    command:
+      - uvicorn
+      - mocks.isp_cube.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    ports:
+      - "8001:8001"
+
+  geogrid-mock:
+    build: .
+    command:
+      - uvicorn
+      - mocks.geogrid.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+    ports:
+      - "8002:8002"
+
+  smartolt-mock:
+    build: .
+    command:
+      - uvicorn
+      - mocks.smartolt.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8003"
+    ports:
+      - "8003:8003"
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - orchestrator
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+  ui:
+    build: .
+    command:
+      - streamlit
+      - run
+      - ui/app.py
+      - --server.port
+      - "8501"
+      - --server.address
+      - 0.0.0.0
+    environment:
+      - ORCHESTRATOR_BASE_URL=http://orchestrator:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - orchestrator
+
+volumes:
+  grafana-data:

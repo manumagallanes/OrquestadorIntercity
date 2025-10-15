@@ -1,0 +1,79 @@
+%%{init: {'flowchart': {'useMaxWidth': false, 'htmlLabels': true, 'curve': 'linear'}}}%%
+flowchart LR
+    %% ===== Clases / estilos =====
+    classDef actor fill:#F5EEF8,stroke:#8E44AD,color:#4A235A,font-weight:bold;
+    classDef system fill:#EBF5FB,stroke:#21618C,color:#1A5276;
+    classDef orchestrator fill:#FDEDEC,stroke:#943126,color:#641E16,font-weight:bold;
+    classDef monitor fill:#E8F8F5,stroke:#117864,color:#0E6655;
+    classDef optional fill:#FEF9E7,stroke:#B9770E,color:#7D6608,stroke-dasharray:4 2;
+
+    %% ===== Swimlanes (columnas) =====
+    subgraph L1[Operación]
+      direction TB
+      Operador["👤 Operador<br/>ISP-Cube"]:::actor
+      UI["🖥️ UI Streamlit<br/>(Demo / QA)"]:::optional
+    end
+
+    subgraph L2[Backoffice]
+      direction TB
+      ISP["📋 ISP-Cube<br/>Alta / Modificación"]:::system
+    end
+
+    subgraph L3[🧠 Orchestrator FastAPI]
+      direction TB
+      Orchestrator["Auditoría + Validaciones"]:::orchestrator
+    end
+
+    subgraph L4[Plataformas externas]
+      direction TB
+      GeoGrid["🗺️ GeoGrid"]:::system
+      SmartOLT["🔌 SmartOLT"]:::system
+    end
+
+    subgraph L5[Observabilidad]
+      direction TB
+      Grafana["📈 Prometheus / Grafana<br/>Incidentes & Métricas"]:::monitor
+    end
+
+    %% ===== Sección A: Alta / sincronización =====
+    Operador -->|"(1) Carga cliente<br/>integration_enabled = true"| ISP
+    ISP -->|"(2) GET /customers/{id}"| Orchestrator
+    Orchestrator -->|"(3) POST/PUT /features<br/>Nombre: ID_CONEXION - Nombre"| GeoGrid
+    GeoGrid -.->|"Feature creada / actualizada"| Orchestrator
+
+    %% ===== Sección B: Provisionamiento ONU =====
+    Orchestrator -->|"(4) POST /onu/authorize<br/>+ GET /onus"| SmartOLT
+    SmartOLT -.->|"ONU autorizada o existente"| Orchestrator
+
+    %% ===== Sección C: Baja técnica =====
+    Operador -.->|"status = inactive"| ISP
+    Orchestrator -.->|"DELETE /features/{id}"| GeoGrid
+    Orchestrator -.->|"DELETE /onus"| SmartOLT
+
+    %% ===== Observabilidad =====
+    Orchestrator -->|"Incidentes (/incidents)<br/>Auditoría (/audits)<br/>Métricas (/metrics)"| Grafana
+
+    %% ===== UI (herramientas demo) =====
+    UI -.->|"Formularios: sync / provision / baja"| Orchestrator
+    UI -.->|"PATCH /status, /flag<br/>POST /customers"| ISP
+
+    %% ===== Notas (separadas para no recargar el flujo) =====
+    subgraph Notas[Notas]
+      direction TB
+      N1["📝 Alta y modificación nacen en ISP-Cube.<br/>El orquestador valida y refleja en GeoGrid."]:::optional
+      N2["📝 Auditoría completa (usuario, acción, dry-run, timestamp).<br/>Incidentes y métricas en Grafana."]:::optional
+      N3["📝 La baja técnica sólo quita feature y ONU.<br/>El cliente se mantiene en ISP-Cube hasta cierre de facturación."]:::optional
+    end
+
+    %% Referencias suaves desde Notas (sin saturar el layout)
+    N1 -.-> ISP
+    N1 -.-> Orchestrator
+    N1 -.-> GeoGrid
+    N2 -.-> Orchestrator
+    N2 -.-> Grafana
+    N3 -.-> SmartOLT
+    N3 -.-> GeoGrid
+    N3 -.-> ISP
+
+    %% ===== Micro-ajustes de estética =====
+    linkStyle default stroke:#6C757D,stroke-width:1.2px
