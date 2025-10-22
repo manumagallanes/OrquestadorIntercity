@@ -255,6 +255,7 @@ Prometheus queda disponible en http://localhost:9090; los métricos más útiles
   - Cargá secrets o tokens con las variables de entorno que correspondan.
   - Activá `verify_tls=true` y extendé los timeouts según la latencia real.
 - **Reintentos y circuit breakers**: si un upstream empieza a fallar, el orquestador reintenta con backoff exponencial y abre un breaker según la configuración del entorno. Ajustá `max_attempts`, `backoff_*` y `failure_threshold` en los JSON para reflejar las políticas reales.
+- **Cobertura geográfica**: al sincronizar, sólo se aceptan coordenadas dentro del bounding box de Córdoba. Si necesitás ampliar el área, ajustá `CORDOBA_LAT_RANGE` y `CORDOBA_LON_RANGE` en `orchestrator/main.py`.
 - **Manejo de datos**: todos los mocks están en memoria, así que un `docker compose down` borra el estado. Si necesitás persistencia, podés montar volúmenes o guardar backups.
 - **Auditoría/Incidentes**: se guardan en buffers en memoria (por defecto 500 y 200 entradas). El `/reset` los limpia.
 - **Extender la lógica**: si querés propagar parámetros tipo `simulate` desde el orquestador hacia los mocks, el lugar indicado es `orchestrator/main.py` dentro del endpoint correspondiente.

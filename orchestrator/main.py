@@ -384,6 +384,9 @@ REQUIRED_CUSTOMER_FIELDS: List[str] = [
     "onu_sn",
 ]
 
+CORDOBA_LAT_RANGE: Tuple[float, float] = (-35.5, -29.0)
+CORDOBA_LON_RANGE: Tuple[float, float] = (-66.5, -62.0)
+
 INCIDENT_LOG: deque[Dict[str, Any]] = deque(
     maxlen=int(os.getenv("INCIDENT_BUFFER_SIZE", "200"))
 )
@@ -483,6 +486,56 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
                 "message": "Customer has incomplete network metadata",
                 "customer_id": customer_id,
                 "missing_fields": missing_fields,
+            },
+        )
+
+    try:
+        lat = float(customer.get("lat"))
+        lon = float(customer.get("lon"))
+    except (TypeError, ValueError):
+        record_incident(
+            "invalid_coordinates",
+            {
+                "customer_id": customer_id,
+                "lat": customer.get("lat"),
+                "lon": customer.get("lon"),
+                "reason": "non_numeric",
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "Customer coordinates are invalid",
+                "customer_id": customer_id,
+                "lat": customer.get("lat"),
+                "lon": customer.get("lon"),
+                "reason": "non_numeric",
+            },
+        )
+
+    if not (
+        CORDOBA_LAT_RANGE[0] <= lat <= CORDOBA_LAT_RANGE[1]
+        and CORDOBA_LON_RANGE[0] <= lon <= CORDOBA_LON_RANGE[1]
+    ):
+        record_incident(
+            "invalid_coordinates",
+            {
+                "customer_id": customer_id,
+                "lat": lat,
+                "lon": lon,
+                "allowed_lat_range": CORDOBA_LAT_RANGE,
+                "allowed_lon_range": CORDOBA_LON_RANGE,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "Customer coordinates outside allowed coverage area",
+                "customer_id": customer_id,
+                "lat": lat,
+                "lon": lon,
+                "allowed_lat_range": CORDOBA_LAT_RANGE,
+                "allowed_lon_range": CORDOBA_LON_RANGE,
             },
         )
 
