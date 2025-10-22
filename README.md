@@ -60,7 +60,10 @@ El orquestador sabe cargar configuraciones según el entorno elegido. Todos los 
 - `dev.json` – apunta a los mocks locales (sin TLS, timeout corto).
 - `staging.json` – ejemplo con URLs HTTPS y distintas regiones (BR, MX).
 - `production.json` – placeholders que podés adaptar a tus backends reales.
+- `intercity.json` – configuración lista para apuntar a los endpoints públicos de ISP Cube, GeoGrid y SmartOLT con headers dinámicos.
 - Cada región define `retry` (intentos + backoff exponencial) y `circuit_breaker` (umbral de fallas, ventana de recuperación). Esos valores se usan automáticamente por el orquestador para reintentar o abrir el breaker cuando los upstream fallan repetidamente.
+
+> Notas sobre headers: si en los JSON usás valores con el prefijo `env:`, por ejemplo `"X-API-Key": "env:ISP_API_KEY"`, el orquestador reemplaza ese valor leyendo la variable de entorno indicada. Es útil para rotar tokens sin tocar los archivos de configuración.
 
 ### Variables clave
 
@@ -70,6 +73,9 @@ El orquestador sabe cargar configuraciones según el entorno elegido. Todos los 
 | `ISP_REGION` / `GEOGRID_REGION` / `SMARTOLT_REGION` | Selecciona la región dentro del entorno. | `ISP_REGION=mx` |
 | `ISP_BASE_URL` (`GEOGRID_BASE_URL`, `SMARTOLT_BASE_URL`) | Override puntual del endpoint por defecto. | `ISP_BASE_URL=http://localhost:9000` |
 | `DRY_RUN` | Cambia el valor inicial del flag `dry_run`. | `DRY_RUN=false` |
+| `ISP_API_KEY`, `GEOGRID_BEARER`, `SMARTOLT_TOKEN` | Tokens inyectados desde `intercity.json` vía `env:`. | `export ISP_API_KEY=xxx` |
+
+> Tip rápido: copiá `.env.intercity.example` a `.env` cuando quieras simular credenciales reales. Ese archivo trae tokens dummy, ideales para probar el flujo completo antes de cargar claves productivas.
 
 Ejemplo: correr el orquestador usando la configuración de staging para México.
 

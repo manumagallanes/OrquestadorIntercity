@@ -74,6 +74,24 @@ DEFAULT_ENVIRONMENT = "dev"
 RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 
 
+def _resolve_env_reference(raw_value: Optional[str]) -> Optional[str]:
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, str):
+        return raw_value
+    if raw_value.startswith("env:"):
+        env_name = raw_value[4:].strip()
+        if not env_name:
+            raise RuntimeError("Empty environment variable reference in header config")
+        env_value = os.getenv(env_name)
+        if env_value is None:
+            raise RuntimeError(
+                f"Environment variable '{env_name}' required for header is not set"
+            )
+        return env_value
+    return raw_value
+
+
 class RetrySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -97,6 +115,15 @@ class RegionSettings(BaseModel):
     verify_tls: bool = False
     retry: RetrySettings = Field(default_factory=RetrySettings)
     circuit_breaker: Optional[CircuitBreakerSettings] = None
+    default_headers: Dict[str, str] = Field(default_factory=dict)
+
+    def resolved_headers(self) -> Dict[str, str]:
+        resolved: Dict[str, str] = {}
+        for header, raw_value in self.default_headers.items():
+            value = _resolve_env_reference(raw_value)
+            if value is not None:
+                resolved[header] = value
+        return resolved
 
 
 class ServiceSettings(BaseModel):
@@ -172,11 +199,14 @@ class EnvConfig(BaseModel):
         self, service: str, region: Optional[str] = None
     ) -> Tuple[Dict[str, Any], str]:
         region_cfg, region_name = self._resolve_region(service, region)
+        base_headers = region_cfg.resolved_headers()
+        headers = base_headers if base_headers else None
         return (
             {
                 "base_url": region_cfg.base_url,
                 "timeout": region_cfg.timeout_seconds,
                 "verify": region_cfg.verify_tls,
+                "headers": headers,
             },
             region_name,
         )
@@ -623,6 +653,15 @@ async def fetch_json(
     retry_cfg = region_cfg.retry
     multiplier = max(retry_cfg.backoff_initial_seconds, 0.1)
 
+    base_headers = region_cfg.resolved_headers()
+    extra_headers = kwargs.pop("headers", None)
+    merged_headers: Optional[Dict[str, str]]
+    if extra_headers is None:
+        merged_headers = base_headers if base_headers else None
+    else:
+        merged_headers = dict(base_headers) if base_headers else {}
+        merged_headers.update(extra_headers)
+
     response: Optional[httpx.Response] = None
     try:
         async for attempt in AsyncRetrying(
@@ -632,7 +671,12 @@ async def fetch_json(
             reraise=True,
         ):
             with attempt:
-                response = await client.request(method, url, **kwargs)
+                response = await client.request(
+                    method,
+                    url,
+                    headers=merged_headers.copy() if merged_headers else None,
+                    **kwargs,
+                )
                 logger.info(
                     "HTTP %s %s -> %s",
                     method.upper(),

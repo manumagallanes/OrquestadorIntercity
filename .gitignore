@@ -5,6 +5,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.intercity.example
 
 # Virtual environments
 .venv/
