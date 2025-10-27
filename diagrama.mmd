@@ -1,79 +1,103 @@
-%%{init: {'flowchart': {'useMaxWidth': false, 'htmlLabels': true, 'curve': 'linear'}}}%%
+%%{init: {'flowchart': {'useMaxWidth': false, 'curve': 'basis'}}}%%
 flowchart LR
-    %% ===== Clases / estilos =====
-    classDef actor fill:#F5EEF8,stroke:#8E44AD,color:#4A235A,font-weight:bold;
-    classDef system fill:#EBF5FB,stroke:#21618C,color:#1A5276;
-    classDef orchestrator fill:#FDEDEC,stroke:#943126,color:#641E16,font-weight:bold;
+    %% ===== Estilos =====
+    classDef actor fill:#F4ECF7,stroke:#7D3C98,color:#4A235A,font-weight:bold;
+    classDef orchestrator fill:#FDEDEC,stroke:#C0392B,color:#641E16,font-weight:bold;
+    classDef system fill:#EBF5FB,stroke:#2471A3,color:#1B4F72;
+    classDef mock fill:#F9EBEA,stroke:#B03A2E,color:#78281F,stroke-dasharray:5 3;
     classDef monitor fill:#E8F8F5,stroke:#117864,color:#0E6655;
-    classDef optional fill:#FEF9E7,stroke:#B9770E,color:#7D6608,stroke-dasharray:4 2;
+    classDef storage fill:#FEF9E7,stroke:#B9770E,color:#7D6608;
+    classDef note fill:#FDFEFE,stroke:#BFC9CA,color:#5D6D7E,font-size:12px;
+    classDef decision fill:#FDF2E9,stroke:#B9770E,color:#7D6608,font-weight:bold;
 
-    %% ===== Swimlanes (columnas) =====
-    subgraph L1[Operación]
+    %% ===== Actores y herramientas =====
+    subgraph Operacion[Operación]
       direction TB
-      Operador["👤 Operador<br/>ISP-Cube"]:::actor
-      UI["🖥️ UI Streamlit<br/>(Demo / QA)"]:::optional
+      Operador["Operador / Backoffice"]:::actor
+      UI["UI Streamlit (QA)"]:::system
     end
 
-    subgraph L2[Backoffice]
+    %% ===== Orquestador =====
+    Orchestrator["Intercity Orchestrator<br/>FastAPI + Validaciones + Auditoría"]:::orchestrator
+
+    %% ===== Sistemas reales =====
+    subgraph Productivo[Sistemas productivos]
       direction TB
-      ISP["📋 ISP-Cube<br/>Alta / Modificación"]:::system
+      ISP["ISP-Cube<br/>Catálogo comercial"]:::system
+      GeoGrid["GeoGrid<br/>Inventario geoespacial"]:::system
+      SmartOLT["SmartOLT<br/>Control de ONUs/OLT"]:::system
     end
 
-    subgraph L3[🧠 Orchestrator FastAPI]
+    %% ===== Entorno local (mocks) =====
+    subgraph Local[Entorno local / QA]
       direction TB
-      Orchestrator["Auditoría + Validaciones"]:::orchestrator
+      ISPMock["isp-mock"]:::mock
+      GeoMock["geogrid-mock"]:::mock
+      SmartMock["smartolt-mock"]:::mock
     end
 
-    subgraph L4[Plataformas externas]
+    %% ===== Observabilidad y datos internos =====
+    subgraph Observabilidad[Observabilidad y analítica]
       direction TB
-      GeoGrid["🗺️ GeoGrid"]:::system
-      SmartOLT["🔌 SmartOLT"]:::system
+      Prom["Prometheus"]:::monitor
+      Graf["Grafana"]:::monitor
+      Datamart["Datamart / Backups<br/>(PostgreSQL, Data Lake, etc.)"]:::storage
     end
 
-    subgraph L5[Observabilidad]
-      direction TB
-      Grafana["📈 Prometheus / Grafana<br/>Incidentes & Métricas"]:::monitor
-    end
+    %% ===== Flujos principales =====
+    Operador -->|"Operaciones comerciales / tickets"| ISP
+    Operador -.->|"Usa UI del orquestador (QA)"| UI
+    UI -.->|"Formularios sync / provision / baja"| Orchestrator
+    UI -.->|"Gestión demo (POST/PATCH)"| ISPMock
 
-    %% ===== Sección A: Alta / sincronización =====
-    Operador -->|"(1) Carga cliente<br/>integration_enabled = true"| ISP
-    ISP -->|"(2) GET /customers/{id}"| Orchestrator
-    Orchestrator -->|"(3) POST/PUT /features<br/>Nombre: ID_CONEXION - Nombre"| GeoGrid
-    GeoGrid -.->|"Feature creada / actualizada"| Orchestrator
+    ISP -->|"GET /customers, etc."| Orchestrator
+    Orchestrator -->|"Sincronización GeoGrid\n POST/PUT /features"| GeoGrid
+    Orchestrator -->|"Provisionamiento ONU\n POST /onu/authorize"| SmartOLT
+    Orchestrator -->|"Baja técnica"| CB{{Decisión baja?}}
+    CB -->|"Eliminar feature"| GeoGrid
+    CB -->|"Eliminar ONU"| SmartOLT
 
-    %% ===== Sección B: Provisionamiento ONU =====
-    Orchestrator -->|"(4) POST /onu/authorize<br/>+ GET /onus"| SmartOLT
-    SmartOLT -.->|"ONU autorizada o existente"| Orchestrator
-
-    %% ===== Sección C: Baja técnica =====
-    Operador -.->|"status = inactive"| ISP
-    Orchestrator -.->|"DELETE /features/{id}"| GeoGrid
-    Orchestrator -.->|"DELETE /onus"| SmartOLT
+    DecisionQA{{¿Config QA?}}:::decision
+    Orchestrator --> DecisionQA
+    LocalSwitch(("Mocks locales")):::mock
+    ProdSwitch(("Servicios productivos")):::system
+    DecisionQA -->|"Sí"| LocalSwitch
+    DecisionQA -->|"No"| ProdSwitch
+    LocalSwitch --> ISPMock
+    LocalSwitch --> GeoMock
+    LocalSwitch --> SmartMock
+    ProdSwitch --> ISP
+    ProdSwitch --> GeoGrid
+    ProdSwitch --> SmartOLT
 
     %% ===== Observabilidad =====
-    Orchestrator -->|"Incidentes (/incidents)<br/>Auditoría (/audits)<br/>Métricas (/metrics)"| Grafana
+    Orchestrator -->|"Métricas (/metrics)"| Prom
+    Prom --> Graf
+    Orchestrator -->|"Auditorías (/audits)\nIncidentes (/incidents)"| Graf
 
-    %% ===== UI (herramientas demo) =====
-    UI -.->|"Formularios: sync / provision / baja"| Orchestrator
-    UI -.->|"PATCH /status, /flag<br/>POST /customers"| ISP
+    %% ===== Captura de datos internos =====
+    Orchestrator -->|"Exports periódicos\n(auditorías, incidentes, métricas)"| Datamart
+    subgraph Exportaciones[Extracciones externas]
+      direction TB
+      ISPExport["Extracción ISP-Cube"]:::system
+      GeoExport["Extracción GeoGrid"]:::system
+      SmartExport["Extracción SmartOLT"]:::system
+    end
+    Productivo -->|"APIs / Reports"| Exportaciones
+    Exportaciones -->|"Datos consolidados"| Datamart
 
-    %% ===== Notas (separadas para no recargar el flujo) =====
+    %% ===== Notas =====
     subgraph Notas[Notas]
       direction TB
-      N1["📝 Alta y modificación nacen en ISP-Cube.<br/>El orquestador valida y refleja en GeoGrid."]:::optional
-      N2["📝 Auditoría completa (usuario, acción, dry-run, timestamp).<br/>Incidentes y métricas en Grafana."]:::optional
-      N3["📝 La baja técnica sólo quita feature y ONU.<br/>El cliente se mantiene en ISP-Cube hasta cierre de facturación."]:::optional
+      Nota1["El orquestador decide si usa mocks locales o servicios productivos según configuración."]:::note
+      Nota2["Datamart/backups consolida información propia para reportes y recuperación."]:::note
+      Nota3["Prometheus/Grafana monitorean latencias, incidentes y volumen de operaciones."]:::note
     end
 
-    %% Referencias suaves desde Notas (sin saturar el layout)
-    N1 -.-> ISP
-    N1 -.-> Orchestrator
-    N1 -.-> GeoGrid
-    N2 -.-> Orchestrator
-    N2 -.-> Grafana
-    N3 -.-> SmartOLT
-    N3 -.-> GeoGrid
-    N3 -.-> ISP
+    Nota1 -.-> Orchestrator
+    Nota1 -.-> Local
+    Nota1 -.-> Productivo
+    Nota2 -.-> Datamart
+    Nota3 -.-> Graf
 
-    %% ===== Micro-ajustes de estética =====
-    linkStyle default stroke:#6C757D,stroke-width:1.2px
+    linkStyle default stroke:#5D6D7E,stroke-width:1.2px
