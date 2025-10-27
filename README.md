@@ -1,141 +1,171 @@
-# Orquestador Intercity – Guía Completa
+# Orquestador Intercity – Documentación Técnica
 
-Este repositorio trae un entorno **100 % local** para ensayar el flujo de integración entre ISP-Cube, GeoGrid y SmartOLT sin tocar sistemas reales. Todo corre con contenedores Docker y mocks livianos que imitan el comportamiento de las APIs productivas. La idea es que puedas levantarlo, probar casos reales de punta a punta y monitorear el resultado desde Grafana.
-
----
-
-## 1. Qué vas a encontrar
-
-| Servicio            | Puerto | Descripción resumida                                                                 |
-|---------------------|:------:|---------------------------------------------------------------------------------------|
-| `orchestrator`      |  8000  | FastAPI que coordina los tres sistemas. Exponer `/sync/customer`, `/provision/onu`, etc. |
-| `isp-mock`          |  8001  | Catálogo de clientes falso con flags, OLTs, boards, coordenadas…                      |
-| `geogrid-mock`      |  8002  | API de features GeoJSON en memoria.                                                   |
-| `smartolt-mock`     |  8003  | API de autorización de ONUs.                                                          |
-| `prometheus`        |  9090  | Recolecta métricas del orquestador.                                                   |
-| `grafana`           |  3000  | Dashboards prearmados (incluye incidentes en vivo).                                   |
-| `ui`                |  8501  | Panel Streamlit para operar sin usar `curl`.                                          |
-
-Los contenedores se comunican vía red interna de Docker, así que no necesitás dependencias externas ni credenciales reales.
+Este repositorio reúne un entorno autocontenido para reproducir la integración entre ISP-Cube, GeoGrid y SmartOLT mediante un orquestador escrito en FastAPI. El propósito central es disponer de un laboratorio controlado que permita comprender la arquitectura, validar comportamientos y preparar despliegues hacia entornos reales sin depender de sistemas productivos.
 
 ---
 
-## 2. Requisitos previos
+## 1. Introducción
 
-1. Docker y Docker Compose (plugin moderno `docker compose` o el binario `docker-compose`).
-2. Python no es obligatorio, salvo que quieras ejecutar scripts fuera del contenedor.
-3. Puertos libres 8000–8501, 3000 y 9090.
+El orquestador coordina tres dominios: catálogo de clientes (ISP-Cube), plataforma geoespacial (GeoGrid) y autorización de ONUs (SmartOLT). Cada operación se valida de forma previa, se registra en auditoría, expone métricas y produce incidentes cuando un flujo no puede concluirse. El ecosistema completo se empaqueta con Docker Compose e incluye mocks funcionales, panel de monitoreo y una interfaz Streamlit para operar sin requerir herramientas adicionales.
+
+Este documento presenta la fundamentación conceptual, la arquitectura técnica, los flujos principales, las opciones de configuración y las pautas operativas para que una persona ajena al proyecto pueda utilizarlo con criterio.
 
 ---
 
-## 3. Arranque rápido
+## 2. Marco teórico
+
+### 2.1 Orquestación OSS/BSS en redes FTTx
+
+La orquestación en un escenario FTTx consiste en coordinar procesos entre sistemas de soporte (OSS/BSS) con el fin de preservar consistencia operativa. Un orquestador intermedia entre solicitudes de automatización y sistemas especializados, aplicando reglas de negocio, normalización de datos y control transaccional. El modelo simplifica la integración al centralizar la lógica y desacoplar consumidores de las APIs subyacentes.
+
+### 2.2 Consistencia y calidad de datos
+
+Antes de modificar sistemas externos, el orquestador valida que el cliente tenga datos completos, coordenadas dentro del rango admitido y que la estructura de red solicitada coincida con la registrada. Esta verificación temprana evita divergencias entre plataformas y reduce el costo de remediación. Los incidentes emitidos (`missing_fields`, `invalid_coordinates`, `hardware_mismatch`, entre otros) documentan las causas de rechazo para permitir acciones correctivas.
+
+### 2.3 Resiliencia frente a fallos
+
+Las integraciones utilizan clientes HTTP asíncronos, reintentos con backoff exponencial y circuit breakers configurables. Los códigos 5xx gatillan reintentos, mientras que fallas consecutivas elevadas abren el breaker correspondiente y bloquean la interacción temporalmente. Este patrón protege al orquestador de degradaciones en los servicios externos y facilita la observación de incidentes repetitivos.
+
+---
+
+## 3. Arquitectura de la solución
+
+### 3.1 Componentes principales
+
+| Servicio         | Puerto | Descripción resumida                                                                 |
+|------------------|:------:|---------------------------------------------------------------------------------------|
+| `orchestrator`   |  8000  | API FastAPI que implementa la lógica de negocio, expone endpoints REST y métricas.   |
+| `isp-mock`       |  8001  | Mock de ISP-Cube con catálogo de clientes en memoria y soporte para flags de integración. |
+| `geogrid-mock`   |  8002  | Mock de GeoGrid que almacena features GeoJSON y permite altas, actualizaciones y consultas. |
+| `smartolt-mock`  |  8003  | Mock de SmartOLT orientado a autorizar ONUs y simular códigos de error.              |
+| `prometheus`     |  9090  | Servicio de métricas que consume el endpoint `/metrics` del orquestador.             |
+| `grafana`        |  3000  | Dashboards preconfigurados para visualizar flujos, incidentes y latencias.          |
+| `ui`             |  8501  | Interfaz Streamlit para operar sobre la API y los mocks sin necesidad de `curl`.    |
+
+El archivo `diagrama.mmd` describe la topología mediante un diagrama Mermaid. Los contenedores comparten una red interna, por lo que no se requieren dependencias externas ni credenciales reales.
+
+### 3.2 Módulos relevantes
+
+- `orchestrator/main.py`: define modelos Pydantic, carga de configuración, middlewares, endpoints y reglas de validación.
+- `config/environments/*.json`: describe entornos, regiones, timeouts, reintentos y circuit breakers.
+- `monitoring/`: incluye dashboards y reglas de Prometheus/Grafana.
+- `mocks/`: implementa la lógica de las APIs simuladas.
+- `scripts/`: alberga utilitarios reutilizables (por ejemplo, potenciales smoke tests automatizados).
+
+---
+
+## 4. Configuración de entornos y parámetros
+
+### 4.1 Archivos JSON de entorno
+
+Los archivos `dev.json`, `staging.json`, `production.json` e `intercity.json` especifican, para cada servicio:
+
+- `base_url` y `timeout_seconds`.
+- Parámetros de reintento (`max_attempts`, `backoff_initial_seconds`, `backoff_max_seconds`).
+- Configuración de circuit breaker (`failure_threshold`, `recovery_timeout_seconds`).
+- Headers por defecto, opcionalmente con referencias a variables de entorno (`env:VARIABLE`).
+
+El campo `default_region` determina la región activa cuando no se indica otra explícitamente.
+
+### 4.2 Variables de entorno disponibles
+
+- `ORCHESTRATOR_ENV`: selecciona el archivo de configuración a cargar (`dev` por defecto).
+- `ISP_REGION`, `GEOGRID_REGION`, `SMARTOLT_REGION`: sustituyen la región por defecto de cada servicio.
+- `ISP_BASE_URL`, `GEOGRID_BASE_URL`, `SMARTOLT_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON.
+- `DRY_RUN`: fuerza el valor inicial del flag global `dry_run` (interpreta `true/false`, `1/0` o equivalentes).
+- Cualquier valor declarado como `env:VARIABLE` en los JSON debe definirse en el entorno del proceso antes de iniciar el orquestador.
+
+El endpoint `GET /config` expone la configuración efectiva con las sustituciones aplicadas, mientras que `POST /config` actualiza el flag `dry_run` en tiempo de ejecución.
+
+---
+
+## 5. Puesta en marcha local
+
+### 5.1 Requisitos previos
+
+1. Docker y Docker Compose (plugin `docker compose`).
+2. Puertos libres: 8000–8003, 8501, 3000 y 9090.
+3. Python 3.10+ es opcional para ejecutar scripts fuera de los contenedores.
+
+### 5.2 Inicio del entorno
 
 ```bash
-# Clonar el repo (o descargarlo) y posicionarse en la raíz
 docker compose up --build
 ```
 
-Eso levanta todos los servicios con la configuración por defecto (entorno `dev`). Cuando los contenedores estén listos:
+El comando compila imágenes, crea la red interna y lanza todos los servicios según la configuración `dev`. Los accesos principales son:
 
-- Orchestrator API: http://localhost:8000/docs  
-- UI Streamlit: http://localhost:8501  
-- Grafana: http://localhost:3000 (usuario `admin`, contraseña `admin`)  
+- API y documentación interactiva: http://localhost:8000/docs
+- UI Streamlit: http://localhost:8501
+- Grafana: http://localhost:3000 (usuario `admin`, contraseña `admin`)
 - Prometheus: http://localhost:9090
 
-Para volver todo al estado inicial:
+### 5.3 Reinicialización del estado
 
 ```bash
 curl -X POST http://localhost:8000/reset
 ```
 
-Ese endpoint llama al `/reset` de cada mock y limpia auditorías/incidentados en memoria.
+El orquestador coordina el reinicio de cada mock y limpia los buffers de auditoría e incidentes en memoria. El endpoint devuelve `202 Accepted` para indicar que la operación se ejecuta de forma asíncrona.
 
 ---
 
-## 4. Configuración por entorno y regiones
+## 6. Flujos operativos del orquestador
 
-El orquestador sabe cargar configuraciones según el entorno elegido. Todos los archivos viven en `config/environments/`:
+Los endpoints principales se encuentran en `orchestrator/main.py` y comparten la siguiente estructura: validación preliminar, interacción con servicios externos, registro en auditoría e instrumentación de métricas.
 
-- Si querés overrides rápidos, copiá `.env.example` a `.env` y ajustá variables. Cualquier valor allí tiene prioridad sobre los JSON.
-- `dev.json` – apunta a los mocks locales (sin TLS, timeout corto).
-- `staging.json` – ejemplo con URLs HTTPS y distintas regiones (BR, MX).
-- `production.json` – placeholders que podés adaptar a tus backends reales.
-- `intercity.json` – configuración lista para apuntar a los endpoints públicos de ISP Cube, GeoGrid y SmartOLT con headers dinámicos.
-- Cada región define `retry` (intentos + backoff exponencial) y `circuit_breaker` (umbral de fallas, ventana de recuperación). Esos valores se usan automáticamente por el orquestador para reintentar o abrir el breaker cuando los upstream fallan repetidamente.
+### 6.1 Sincronización de cliente hacia GeoGrid (`POST /sync/customer`)
 
-> Notas sobre headers: si en los JSON usás valores con el prefijo `env:`, por ejemplo `"X-API-Key": "env:ISP_API_KEY"`, el orquestador reemplaza ese valor leyendo la variable de entorno indicada. Es útil para rotar tokens sin tocar los archivos de configuración.
+1. Consulta a ISP-Cube para obtener el cliente maestro.
+2. Validaciones ejecutadas por `ensure_customer_ready`: flag de integración activo, campos obligatorios completos, coordenadas numéricas y dentro del bounding box definido (valores de Córdoba por defecto).
+3. Construcción del payload GeoJSON y envío a GeoGrid.
+4. Manejo de resultados:
+   - `201 Created`: el registro se marca como creado (`action: created`).
+   - `409 Conflict`: se recupera el identificador existente, se realiza un `PUT` y se marca como actualizado (`action: updated`).
+5. Auditoría de la operación y actualización de contadores de métricas.
 
-### Variables clave
+Los incidentes `integration_disabled`, `missing_fields` e `invalid_coordinates` describen las causas por las que un cliente no puede sincronizarse.
 
-| Variable | Significado | Ejemplo |
-|----------|-------------|---------|
-| `ORCHESTRATOR_ENV` | Entorno base (`dev`, `staging`, `production`). | `ORCHESTRATOR_ENV=staging` |
-| `ISP_REGION` / `GEOGRID_REGION` / `SMARTOLT_REGION` | Selecciona la región dentro del entorno. | `ISP_REGION=mx` |
-| `ISP_BASE_URL` (`GEOGRID_BASE_URL`, `SMARTOLT_BASE_URL`) | Override puntual del endpoint por defecto. | `ISP_BASE_URL=http://localhost:9000` |
-| `DRY_RUN` | Cambia el valor inicial del flag `dry_run`. | `DRY_RUN=false` |
-| `ISP_API_KEY`, `GEOGRID_BEARER`, `SMARTOLT_TOKEN` | Tokens inyectados desde `intercity.json` vía `env:`. | `export ISP_API_KEY=xxx` |
+### 6.2 Provisionamiento de ONU (`POST /provision/onu`)
 
-> Tip rápido: copiá `.env.intercity.example` a `.env` cuando quieras simular credenciales reales. Ese archivo trae tokens dummy, ideales para probar el flujo completo antes de cargar claves productivas.
+1. Recuperación del cliente en ISP-Cube y reutilización de `ensure_customer_ready`.
+2. Comparación de hardware con `ensure_hardware_matches`; divergencias generan el incidente `hardware_mismatch` y devuelven `409 Conflict`.
+3. Evaluación del flag `dry_run` (global o provisto en la petición):
+   - En modo simulación se devuelve un resultado informativo sin invocar SmartOLT.
+   - En modo ejecución se llama a `/onu/authorize`, con reintentos y circuit breaker configurados.
+4. Registro en auditoría con el resultado (`authorized`, `already_authorized`, simulaciones) y actualización de métricas.
 
-Ejemplo: correr el orquestador usando la configuración de staging para México.
+### 6.3 Baja técnica (`POST /decommission/customer`)
 
-```bash
-ORCHESTRATOR_ENV=staging \
-ISP_REGION=mx \
-GEOGRID_REGION=mx \
-SMARTOLT_REGION=mx \
-docker compose up --build
-```
-
-En cualquier momento podés consultar qué config está activa con:
-
-```bash
-curl http://localhost:8000/config
-```
-
-Respuesta típica:
-
-```json
-{
-  "environment": "dev",
-  "dry_run": true,
-  "services": {
-    "isp": {
-      "default_region": "default",
-      "base_url": "http://isp-mock:8001",
-      "timeout_seconds": 10.0,
-      "verify_tls": false
-    },
-    ...
-  }
-}
-```
+1. Verificación de estado inactivo mediante `ensure_customer_inactive`.
+2. Eliminación de la feature en GeoGrid; si no existe, se registra `decommission_missing_feature`.
+3. Desautorización de la ONU en SmartOLT; la ausencia de registros genera `decommission_missing_onu`.
+4. Consolidación del resultado final y auditoría del proceso.
 
 ---
 
-## 5. Flujos principales (vía `curl`)
+## 7. API expuesta
 
-> Todos los ejemplos asumen que estás en `dev` con los mocks locales.
+| Endpoint                 | Método | Descripción                                                | Códigos destacados |
+|--------------------------|:------:|------------------------------------------------------------|--------------------|
+| `/sync/customer`         | POST   | Replica un cliente en GeoGrid con validaciones previas.    | 200, 409, 412, 422 |
+| `/provision/onu`         | POST   | Autoriza una ONU o simula la operación según `dry_run`.    | 200, 204, 409, 412, 422 |
+| `/decommission/customer` | POST   | Retira recursos asociados a un cliente inactivo.           | 200, 204, 409, 412 |
+| `/config`                | GET    | Informa la configuración efectiva del orquestador.         | 200 |
+| `/config`                | POST   | Actualiza el flag global `dry_run`.                        | 200 |
+| `/reset`                 | POST   | Restablece mocks, auditorías e incidentes.                 | 202 |
+| `/incidents`             | GET    | Lista incidentes recientes (con filtros por tipo y rango). | 200 |
+| `/audits`                | GET    | Devuelve auditorías filtradas por acción, usuario o estado.| 200 |
+| `/metrics`               | GET    | Exposición Prometheus de contadores e histogramas.         | 200 |
+| `/health`                | GET    | Comprobación básica de disponibilidad.                     | 200 |
 
-### 5.1 Sincronizar un cliente hacia GeoGrid
+### 7.1 Ejemplos de invocación
 
 ```bash
 curl -X POST http://localhost:8000/sync/customer \
   -H 'Content-Type: application/json' \
-  -d '{"customer_id":202}'
+  -d '{"customer_id": 202}'
 ```
-
-- Primera ejecución: `{"feature_id":"feature_00001","action":"created"}`.
-- Segunda ejecución: `{"feature_id":"feature_00001","action":"updated"}` (manejo del 409).
-
-Para inspeccionar el resultado:
-
-```bash
-curl http://localhost:8002/features           # features en GeoGrid
-curl http://localhost:8000/audits?action=sync # auditoría
-```
-
-### 5.2 Provisionar una ONU
 
 ```bash
 curl -X POST http://localhost:8000/provision/onu \
@@ -143,131 +173,88 @@ curl -X POST http://localhost:8000/provision/onu \
   -d '{"customer_id":202,"olt_id":2,"board":3,"pon_port":4,"onu_sn":"TESTSN00002","dry_run":false}'
 ```
 
-- Respuesta típica: `{"status":"authorized","authorization":...}`  
-- Segunda llamada con el mismo payload: `{"status":"already_authorized", ...}` (idempotente).
-
-### 5.3 Dar de baja un cliente
-
 ```bash
 curl -X POST http://localhost:8000/decommission/customer \
   -H 'Content-Type: application/json' \
   -d '{"customer_id":707,"dry_run":false}'
 ```
 
-Si no existe la feature ni la ONU, el orquestador registra los incidentes `decommission_missing_feature` / `decommission_missing_onu`. Verificalo en:
-
-```bash
-curl http://localhost:8000/incidents
-```
-
-### 5.4 Dry-run
-
-- Flag global: `curl -X POST http://localhost:8000/config -d '{"dry_run": false}'`.
-- Flag por petición: incluir `"dry_run": false` en el JSON del `/provision/onu`.
-
-
 ---
 
-## 6. Suite de smoke tests sugerida
+## 8. Observabilidad
 
-Tenés una checklist lista en el README original y replicada acá para que puedas repetirla cuando quieras. No es obligatoria, pero ayuda a validar que todo funciona.
+### 8.1 Métricas Prometheus
 
-1. **Reset inicial**  
-   `docker compose up --build` + `curl -X POST http://localhost:8000/reset`
+El middleware `@app.middleware("http")` mide latencia y contabiliza solicitudes, mientras que contadores específicos registran resultados por flujo. Métricas relevantes:
 
-2. **Sincronización básica (cliente 202)**  
-   Ejecutá `/sync/customer` dos veces y revisá features + auditoría.
-
-3. **Flag de integración deshabilitado**  
-   `PATCH` (~> false), intentar sync y chequear incidente.
-
-4. **Datos incompletos (cliente 404)**  
-   Esperar `422` + incidente `missing_fields`.
-
-5. **Conflicto GeoGrid**  
-   Crear feature manualmente en el mock y volver a sincronizar (debe devolver `updated`).
-
-6. **Provisionar ONU e idempotencia**  
-   Primera llamada `authorized`, segunda `already_authorized`.
-
-7. **Mismatch de hardware**  
-   Cambiar `pon_port` en el payload y verificar `409 hardware_mismatch`.
-
-8. **Errores SmartOLT simulados**  
-   El orquestador hoy no reenvía `simulate`; probá directo contra el mock:  
-   `curl -X POST 'http://localhost:8003/onu/authorize?simulate=400' ...`
-
-9. **Baja técnica (cliente 707)**  
-   Ejecutar `/decommission/customer` y revisar incidentes.
-
-10. **Auditoría + incidentes**  
-    Consultar `http://localhost:8000/audits?limit=200` y `http://localhost:8000/incidents`.
-
-11. **UI Streamlit**  
-    Repetir los flujos desde http://localhost:8501. Las secciones “Features” y “Auditoría” deberían reflejar los cambios en tiempo real.
-
-Si querés automatizarlo, podés trasladar estos pasos a un script (`scripts/run_smoke.sh`) o a pruebas de `pytest` con `httpx`.
-
----
-
-## 7. UI Streamlit (http://localhost:8501)
-
-El panel te evita escribir `curl`. Está organizado en secciones:
-
-- **Sincronizar cliente**, **Provisionar ONU**, **Baja técnica**: cada formulario dispara el endpoint correspondiente.
-- **Incidentes**, **Features**, **Auditoría**: permiten inspeccionar resultados y filtrar por acción/usuario.
-- **ISP-Cube (demo)**: cambiar flags, estado o crear clientes ficticios.
-- Barra lateral:
-  - Cambiar URLs base (por si querés apuntar a otro orquestador).
-  - Leer `/config`.
-  - Lanzar `/reset`.
-  - Definir el usuario que viaja en `X-Orchestrator-User` para trazabilidad.
-
----
-
-## 8. Monitoreo y Grafana
-
-- Dashboards listos en http://localhost:3000 (carpeta **Orchestrator**). El principal es **Orchestrator Overview**.
-- Paneles destacados:
-  - **Incidentes pendientes** y **Incidentes por tipo (últimos 5 min)** con Prometheus.
-  - **Latencias p95** de `/sync/customer` y `/provision/onu`.
-  - **Actividad últimos 5 min** (sync, provision, baja) por resultado.
-  - **Incidentes recientes** – tabla en vivo que consume `/incidents` directamente (gracias al plugin JSON instalado automáticamente). Podés abrir el JSON completo desde cada fila.
-
-> Si necesitás más detalle, agregá enlaces personalizados o integra Loki para ver logs dentro del mismo dashboard.
-
-Prometheus queda disponible en http://localhost:9090; los métricos más útiles:
-
+- `orchestrator_request_latency_seconds_bucket{endpoint,method}`
 - `orchestrator_requests_total{endpoint,method,status}`
 - `orchestrator_customer_sync_total{result}`
-- `orchestrator_incidents_total{kind}`
 - `orchestrator_provision_total{result}`
 - `orchestrator_decommission_total{result}`
-- `orchestrator_request_latency_seconds_bucket`
+- `orchestrator_incidents_total{kind}`
+- `orchestrator_incidents_buffer_size`
+
+### 8.2 Dashboards de Grafana
+
+La carpeta **Orchestrator** incluye paneles preparados:
+
+- **Overview**: volumen de operaciones, latencias p95 y distribución de resultados.
+- **Incidentes recientes**: tabla conectada al endpoint `/incidents`.
+- **Actividad en cinco minutos**: seguimiento de sync, provisionamientos y bajas.
+
+Los dashboards se alimentan de Prometheus y pueden ampliarse según las necesidades del despliegue.
 
 ---
 
-## 9. Tips y buenas prácticas
+## 9. Interfaz de usuario (Streamlit)
 
-- **Antes de probar**: asegurate de tener todo limpio (`/reset`) y `dry_run` en el estado que necesites.
-- **Cuando estés listo para apuntar a staging/producción**:
-  - Ajustá los JSON de `config/environments/`.
-  - Cargá secrets o tokens con las variables de entorno que correspondan.
-  - Activá `verify_tls=true` y extendé los timeouts según la latencia real.
-- **Reintentos y circuit breakers**: si un upstream empieza a fallar, el orquestador reintenta con backoff exponencial y abre un breaker según la configuración del entorno. Ajustá `max_attempts`, `backoff_*` y `failure_threshold` en los JSON para reflejar las políticas reales.
-- **Cobertura geográfica**: al sincronizar, sólo se aceptan coordenadas dentro del bounding box de Córdoba. Si necesitás ampliar el área, ajustá `CORDOBA_LAT_RANGE` y `CORDOBA_LON_RANGE` en `orchestrator/main.py`.
-- **Manejo de datos**: todos los mocks están en memoria, así que un `docker compose down` borra el estado. Si necesitás persistencia, podés montar volúmenes o guardar backups.
-- **Auditoría/Incidentes**: se guardan en buffers en memoria (por defecto 500 y 200 entradas). El `/reset` los limpia.
-- **Extender la lógica**: si querés propagar parámetros tipo `simulate` desde el orquestador hacia los mocks, el lugar indicado es `orchestrator/main.py` dentro del endpoint correspondiente.
+El servicio `ui` permite ejecutar los flujos sin uso de CLI:
+
+- Formularios para sincronización, provisionamiento y baja técnica.
+- Visualización de incidentes, auditorías y features en tiempo real.
+- Barra lateral para modificar URLs base, usuario (`X-Orchestrator-User`), lanzar `/reset` y consultar `/config`.
+
+Esta interfaz es útil para demostraciones y para usuarios que no desean interactuar directamente con los endpoints REST.
 
 ---
 
-## 10. ¿Qué sigue?
+## 10. Pruebas recomendadas
 
-- Convertir la suite manual en automatizada.
-- Integrar autenticación real y manejo de tokens para cada servicio.
-- Agregar circuit breakers/reintentos específicos cuando apuntes a APIs externas.
-- Persistir audit trail en una base externa si necesitás histórico más allá de la memoria del proceso.
-- Ajustar Grafana/Prometheus para recibir alertas (Slack, mail, etc.) usando las métricas que ya están expuestas.
+Se propone la siguiente secuencia para validar el entorno tras cada despliegue o cambio relevante:
 
-Mientras tanto, con lo que hay en este repo podés practicar todo el flujo end-to-end sin depender de nadie. ¡Éxitos! 💪
+1. Restablecer estado (`docker compose up --build` y `POST /reset`).
+2. Sincronizar el cliente 202 dos veces y verificar creación / actualización.
+3. Intentar sincronizar un cliente con `integration_enabled=false` y corroborar `412`.
+4. Ejecutar `/sync/customer` sobre un cliente con datos incompletos para obtener `422 missing_fields`.
+5. Generar manualmente un conflicto en GeoGrid y confirmar que el flujo hace `PUT`.
+6. Provisionar la ONU del cliente 202 en modo ejecución; repetir el request para validar idempotencia (`already_authorized`).
+7. Cambiar `pon_port` en el payload y comprobar el incidente `hardware_mismatch`.
+8. Simular fallos en SmartOLT usando parámetros `simulate` directamente sobre el mock.
+9. Procesar la baja del cliente 707 y revisar incidentes `decommission_*`.
+10. Consultar `/audits` y `/incidents` para verificar la trazabilidad de todos los pasos.
+11. Repetir los flujos desde la UI Streamlit y confirmar que refleja los mismos resultados.
+
+La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas en `pytest` y `httpx`.
+
+---
+
+## 11. Extensión y mantenimiento
+
+- **Entornos reales**: ajustar los JSON en `config/environments`, definir secretos mediante variables de entorno y habilitar `verify_tls`.
+- **Persistencia**: si se requiere histórico más allá de la memoria del proceso, adaptar `record_audit` y `record_incident` para almacenar registros en una base de datos externa.
+- **Nuevos servicios o regiones**: extender `EnvConfig` agregando entradas y reutilizando las funciones de resolución de región.
+- **Observabilidad adicional**: integrar Loki u otro agregador de logs para complementar las métricas existentes.
+- **Estrategias de resiliencia**: revisar parámetros de reintento y circuit breaker al apuntar a APIs reales para alinearlos con SLA y capacidad de los upstreams.
+
+---
+
+## 12. Recursos complementarios
+
+- `diagrama.mmd`: descripción visual de la arquitectura.
+- `mocks/`: implementación detallada de las APIs simuladas.
+- `monitoring/`: dashboards y configuración de métricas.
+- `ui/`: código de la interfaz Streamlit.
+- `scripts/`: utilitarios reutilizables para operaciones o pruebas.
+
+Con esta información se puede comprender la arquitectura completa, ejecutar los flujos principales y adaptar el Orquestador Intercity a distintos escenarios de integración.
