@@ -157,9 +157,20 @@ Los incidentes `integration_disabled`, `missing_fields` e `invalid_coordinates` 
 | `/incidents`             | GET    | Lista incidentes recientes (con filtros por tipo y rango). | 200 |
 | `/audits`                | GET    | Devuelve auditorías filtradas por acción, usuario o estado.| 200 |
 | `/metrics`               | GET    | Exposición Prometheus de contadores e histogramas.         | 200 |
+| `/analytics/customer-events` | POST / GET | Alta manual de eventos o consulta de feed georreferenciado. | 200, 201 |
 | `/health`                | GET    | Comprobación básica de disponibilidad.                     | 200 |
 
 ### 7.1 Ejemplos de invocación
+
+> **Importante:** Los mocks arrancan sin clientes precargados. Antes de consumir estos flujos, registrar los que se necesiten en ISP Cube vía `POST /customers`, incluyendo los campos obligatorios (`zone`, `lat`, `lon`, `odb`, etc.). Por ejemplo:
+
+```bash
+curl -X POST http://localhost:8001/customers \
+  -H 'Content-Type: application/json' \
+  -d '{"customer_id":202,"name":"Cliente Demo","address":"Falsa 123","city":"Córdoba","zone":"Centro","lat":-31.41,"lon":-64.18,"odb":"CAJA-10","olt_id":1,"board":0,"pon":1,"onu_sn":"TESTSN00002","integration_enabled":true,"status":"active"}'
+```
+
+Luego pueden ejecutarse las operaciones habituales:
 
 ```bash
 curl -X POST http://localhost:8000/sync/customer \
@@ -179,6 +190,12 @@ curl -X POST http://localhost:8000/decommission/customer \
   -d '{"customer_id":707,"dry_run":false}'
 ```
 
+```bash
+curl -X POST http://localhost:8000/analytics/customer-events \
+  -H 'Content-Type: application/json' \
+  -d '{"event_type":"alta","customer_id":202,"metadata":{"nota":"carga manual"}}'
+```
+
 ---
 
 ## 8. Observabilidad
@@ -194,16 +211,28 @@ El middleware `@app.middleware("http")` mide latencia y contabiliza solicitudes,
 - `orchestrator_decommission_total{result}`
 - `orchestrator_incidents_total{kind}`
 - `orchestrator_incidents_buffer_size`
+- `orchestrator_customer_events_total{event_type,zone}`
+
+Endpoints JSON automáticos para dashboards:
+
+- `GET /analytics/customer-events`: feed crudo de altas/bajas georreferenciadas.
+- `POST /analytics/customer-events`: registra un evento manual (útil para pruebas antes de automatizar flujos).
+- `GET /analytics/customer-events/summary`: agregados por zona con coordenadas promedio.
+- `GET /analytics/customer-events/time-series`: serie diaria por zona para elaborar tendencias.
+- `GET /analytics/customer-events/geo`: listado de eventos con coordenadas, segmentados en altas/bajas.
+
+> Nota: el generador de datos sintéticos (`ORCHESTRATOR_SEED_CUSTOMER_EVENTS`) ahora está deshabilitado por defecto. Si necesitas poblar el dashboard sin tráfico real, exporta la variable a `true` antes de iniciar el servicio.
 
 ### 8.2 Dashboards de Grafana
 
 La carpeta **Orchestrator** incluye paneles preparados:
 
 - **Overview**: volumen de operaciones, latencias p95 y distribución de resultados.
+- **Movimientos de Clientes**: overview de altas/bajas netas (Prometheus), evolución diaria, ranking visual por zona, distribución geográfica y feed de eventos vía `/analytics/customer-events*`.
 - **Incidentes recientes**: tabla conectada al endpoint `/incidents`.
 - **Actividad en cinco minutos**: seguimiento de sync, provisionamientos y bajas.
 
-Los dashboards se alimentan de Prometheus y pueden ampliarse según las necesidades del despliegue.
+Los dashboards se alimentan de Prometheus, del datasource JSON del orquestador y pueden ampliarse según las necesidades del despliegue. Para generar datos de ejemplo se instrumentó un `seed` interno y se añadió `/analytics/customer-events` (POST) para cargar altas/bajas manuales; en producción bastará con exponer la zona desde ISP Cube y dejar que los eventos runtime completen la serie.
 
 ---
 
@@ -224,16 +253,16 @@ Esta interfaz es útil para demostraciones y para usuarios que no desean interac
 Se propone la siguiente secuencia para validar el entorno tras cada despliegue o cambio relevante:
 
 1. Restablecer estado (`docker compose up --build` y `POST /reset`).
-2. Sincronizar el cliente 202 dos veces y verificar creación / actualización.
-3. Intentar sincronizar un cliente con `integration_enabled=false` y corroborar `412`.
-4. Ejecutar `/sync/customer` sobre un cliente con datos incompletos para obtener `422 missing_fields`.
-5. Generar manualmente un conflicto en GeoGrid y confirmar que el flujo hace `PUT`.
-6. Provisionar la ONU del cliente 202 en modo ejecución; repetir el request para validar idempotencia (`already_authorized`).
-7. Cambiar `pon_port` en el payload y comprobar el incidente `hardware_mismatch`.
-8. Simular fallos en SmartOLT usando parámetros `simulate` directamente sobre el mock.
-9. Procesar la baja del cliente 707 y revisar incidentes `decommission_*`.
-10. Consultar `/audits` y `/incidents` para verificar la trazabilidad de todos los pasos.
-11. Repetir los flujos desde la UI Streamlit y confirmar que refleja los mismos resultados.
+2. Registrar en ISP Cube los clientes de prueba necesarios (ej.: 202 activo, 912 con `integration_enabled=false`, 404 con coordenadas ausentes, 707 inactivo) mediante `POST /customers`.
+3. Sincronizar el cliente activo (p.e. 202) dos veces y verificar creación / actualización en GeoGrid.
+4. Intentar sincronizar el cliente con `integration_enabled=false` y corroborar el `412` esperado.
+5. Lanzar `/sync/customer` sobre el cliente incompleto para obtener `422 missing_fields`.
+6. Generar un conflicto en GeoGrid (duplicar feature) y confirmar que el flujo aplica `PUT`.
+7. Provisionar la ONU del cliente activo; repetir la petición para validar la respuesta `already_authorized`.
+8. Cambiar `pon_port` en el payload y comprobar el incidente `hardware_mismatch`.
+9. Simular fallos en SmartOLT usando parámetros `simulate` directamente sobre el mock.
+10. Procesar la baja del cliente inactivo y revisar incidentes `decommission_*`.
+11. Consultar `/audits` y `/incidents` para verificar la trazabilidad y repetir los flujos desde la UI Streamlit.
 
 La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas en `pytest` y `httpx`.
 

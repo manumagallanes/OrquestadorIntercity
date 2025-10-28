@@ -272,6 +272,7 @@ def isp_controls_section() -> None:
                 name = st.text_input("Nombre", "Cliente Demo")
                 address = st.text_input("Dirección", "Calle Ejemplo 123")
                 city = st.text_input("Ciudad", "Río Cuarto")
+                zone = st.text_input("Zona/Barrio", "Centro")
                 col_lat, col_lon = st.columns(2)
                 lat = col_lat.number_input("Latitud", value=-33.1245)
                 lon = col_lon.number_input("Longitud", value=-64.3456)
@@ -287,25 +288,30 @@ def isp_controls_section() -> None:
                 )
                 submitted = st.form_submit_button("Crear cliente")
                 if submitted:
-                    payload = {
-                        "customer_id": int(cid),
-                        "name": name,
-                        "address": address,
-                        "city": city,
-                        "lat": lat,
-                        "lon": lon,
-                        "odb": odb,
-                        "olt_id": int(olt_id),
-                        "board": int(board),
-                        "pon": int(pon),
-                        "onu_sn": onu_sn,
-                        "integration_enabled": integration_enabled,
-                        "status": status_val,
-                    }
-                    success, status_code, data = call_api(
-                        "POST", "/customers", service="isp", json=payload
-                    )
-                    display_response(success, status_code, data)
+                    zone_value = zone.strip()
+                    if not zone_value:
+                        st.error("La zona/barrio es obligatoria para registrar el cliente.")
+                    else:
+                        payload = {
+                            "customer_id": int(cid),
+                            "name": name,
+                            "address": address,
+                            "city": city,
+                            "zone": zone_value,
+                            "lat": lat,
+                            "lon": lon,
+                            "odb": odb,
+                            "olt_id": int(olt_id),
+                            "board": int(board),
+                            "pon": int(pon),
+                            "onu_sn": onu_sn,
+                            "integration_enabled": integration_enabled,
+                            "status": status_val,
+                        }
+                        success, status_code, data = call_api(
+                            "POST", "/customers", service="isp", json=payload
+                        )
+                        display_response(success, status_code, data)
 
 
 def config_section() -> None:

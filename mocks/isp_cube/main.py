@@ -14,83 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger("isp_cube_mock")
 
 
-INITIAL_CUSTOMERS: Dict[int, Dict[str, object]] = {
-    101: {
-        "customer_id": 101,
-        "name": "Cliente Ficticio",
-        "address": "Av Falsa 123",
-        "city": "CiudadX",
-        "lat": -30.0001,
-        "lon": -64.5001,
-        "odb": "CAJA-10",
-        "olt_id": 1,
-        "board": 1,
-        "pon": 8,
-        "onu_sn": "TESTSN00001",
-        "integration_enabled": True,
-        "status": "active",
-    },
-    202: {
-        "customer_id": 202,
-        "name": "Maria da Silva",
-        "address": "Bv. Ameghino 420",
-        "city": "Río Cuarto",
-        "lat": -32.4095,
-        "lon": -63.246,
-        "odb": "CAJA-22B",
-        "olt_id": 1,
-        "board": 0,
-        "pon": 3,
-        "onu_sn": "TESTSN00002",
-        "integration_enabled": True,
-        "status": "active",
-    },
-    912: {
-        "customer_id": 912,
-        "name": "Manuel Magallanes",
-        "address": "Maipu 2842",
-        "city": "Río Cuarto",
-        "lat": -33.1245,
-        "lon": -64.3456,
-        "odb": "CAJA-55",
-        "olt_id": 2,
-        "board": 1,
-        "pon": 6,
-        "onu_sn": "TESTSN00912",
-        "integration_enabled": False,
-        "status": "active",
-    },
-    404: {
-        "customer_id": 404,
-        "name": "Cliente Incompleto",
-        "address": "Calle Sin Datos 123",
-        "city": "Villa Test",
-        "lat": None,
-        "lon": None,
-        "odb": "CAJA-XX",
-        "olt_id": 4,
-        "board": 1,
-        "pon": 3,
-        "onu_sn": "TESTSN00404",
-        "integration_enabled": True,
-        "status": "active",
-    },
-    707: {
-        "customer_id": 707,
-        "name": "Cliente Dado de Baja",
-        "address": "Av Bajas 707",
-        "city": "Ciudad Baja",
-        "lat": -31.2001,
-        "lon": -64.4001,
-        "odb": "CAJA-99",
-        "olt_id": 7,
-        "board": 2,
-        "pon": 8,
-        "onu_sn": "TESTSN00707",
-        "integration_enabled": True,
-        "status": "inactive",
-    },
-}
+INITIAL_CUSTOMERS: Dict[int, Dict[str, object]] = {}
 
 CUSTOMERS: Dict[int, Dict[str, object]] = copy.deepcopy(INITIAL_CUSTOMERS)
 
@@ -100,6 +24,7 @@ class CustomerPayload(BaseModel):
     name: str
     address: str
     city: str
+    zone: str = Field(..., min_length=1)
     lat: Optional[float] = Field(default=None)
     lon: Optional[float] = Field(default=None)
     odb: str

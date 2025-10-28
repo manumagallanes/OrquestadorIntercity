@@ -1,13 +1,15 @@
 import asyncio
 import json
 import logging
-import time
 import os
-from collections import deque
+import random
+import time
+from collections import defaultdict, deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from typing_extensions import Literal
 
@@ -67,6 +69,18 @@ class AuditEntry(BaseModel):
     status: Literal["success", "error"]
     detail: Dict[str, Any] = Field(default_factory=dict)
     timestamp: str
+
+
+class CustomerEventRequest(BaseModel):
+    event_type: Literal["alta", "baja"]
+    customer_id: Optional[int] = Field(default=None, ge=1)
+    zone: Optional[str] = Field(default=None, min_length=1)
+    city: Optional[str] = None
+    lat: Optional[float] = Field(default=None)
+    lon: Optional[float] = Field(default=None)
+    timestamp: Optional[datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    source: Optional[str] = Field(default="manual")
 
 
 CONFIG_ROOT = Path(__file__).resolve().parent.parent / "config" / "environments"
@@ -366,6 +380,11 @@ INCIDENT_COUNTER = Counter(
     "Incidents recorded by orchestrator",
     ["kind"],
 )
+CUSTOMER_EVENT_COUNTER = Counter(
+    "orchestrator_customer_events_total",
+    "Altas y bajas de clientes registradas por zona",
+    ["event_type", "zone"],
+)
 INCIDENT_GAUGE = Gauge(
     "orchestrator_incidents_buffer_size",
     "Current number of incidents retained in buffer",
@@ -377,6 +396,7 @@ PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 REQUIRED_CUSTOMER_FIELDS: List[str] = [
     "lat",
     "lon",
+    "zone",
     "odb",
     "olt_id",
     "board",
@@ -391,6 +411,148 @@ INCIDENT_LOG: deque[Dict[str, Any]] = deque(
     maxlen=int(os.getenv("INCIDENT_BUFFER_SIZE", "200"))
 )
 AUDIT_LOG: deque[AuditEntry] = deque(maxlen=int(os.getenv("AUDIT_BUFFER_SIZE", "500")))
+ZONE_BASE_COORDINATES: Dict[str, Tuple[float, float]] = {
+    "Centro": (-31.417, -64.183),
+    "Nueva Córdoba": (-31.4275, -64.1829),
+    "General Paz": (-31.4138, -64.1704),
+    "Alberdi": (-31.4199, -64.2108),
+    "Alta Córdoba": (-31.3836, -64.2033),
+    "Villa Belgrano": (-31.3602, -64.2383),
+    "Guiñazú": (-31.2861, -64.1736),
+    "Villa Test": (-31.1, -64.0),
+}
+DEFAULT_ZONE_LABEL = "Sin zona"
+CUSTOMER_EVENT_BUFFER_SIZE = int(os.getenv("CUSTOMER_EVENT_BUFFER_SIZE", "2000"))
+CUSTOMER_EVENTS: deque[Dict[str, Any]] = deque(maxlen=CUSTOMER_EVENT_BUFFER_SIZE)
+SYNTHETIC_EVENT_ZONES: List[str] = [
+    "Centro",
+    "Nueva Córdoba",
+    "General Paz",
+    "Alberdi",
+    "Alta Córdoba",
+    "Villa Belgrano",
+]
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_zone_coordinates(zone: str) -> Tuple[Optional[float], Optional[float]]:
+    coords = ZONE_BASE_COORDINATES.get(zone)
+    if coords:
+        return coords
+    return (None, None)
+
+
+def register_customer_event(
+    event_type: Literal["alta", "baja"],
+    *,
+    customer: Optional[Dict[str, Any]] = None,
+    zone: Optional[str] = None,
+    timestamp: Optional[datetime] = None,
+    city: Optional[str] = None,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    source: str = "runtime",
+    metadata: Optional[Dict[str, Any]] = None,
+    customer_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+    safe_zone = zone or (customer.get("zone") if customer else None) or DEFAULT_ZONE_LABEL
+    safe_city = city or (customer.get("city") if customer else None)
+    event_customer_id = (
+        customer_id if customer_id is not None else customer.get("customer_id") if customer else None
+    )
+    lat_value = _safe_float(lat if lat is not None else customer.get("lat") if customer else None)
+    lon_value = _safe_float(lon if lon is not None else customer.get("lon") if customer else None)
+    if lat_value is None or lon_value is None:
+        fallback_lat, fallback_lon = _resolve_zone_coordinates(safe_zone)
+        if lat_value is None:
+            lat_value = fallback_lat
+        if lon_value is None:
+            lon_value = fallback_lon
+    event_timestamp = timestamp or datetime.now(timezone.utc)
+    if isinstance(event_timestamp, str):
+        timestamp_str = event_timestamp
+    else:
+        timestamp_str = event_timestamp.isoformat()
+
+    event_entry: Dict[str, Any] = {
+        "event_id": str(uuid4()),
+        "timestamp": timestamp_str,
+        "event_type": event_type,
+        "zone": safe_zone,
+        "city": safe_city,
+        "customer_id": event_customer_id,
+        "lat": lat_value,
+        "lon": lon_value,
+        "source": source,
+        "metadata": metadata or {},
+    }
+
+    CUSTOMER_EVENTS.append(event_entry)
+    CUSTOMER_EVENT_COUNTER.labels(event_type=event_type, zone=safe_zone).inc()
+    return event_entry
+
+
+def _seed_synthetic_customer_events() -> None:
+    if CUSTOMER_EVENTS:
+        return
+    seed_flag = os.getenv("ORCHESTRATOR_SEED_CUSTOMER_EVENTS", "false").lower()
+    if seed_flag not in {"true", "1", "yes", "on"}:
+        return
+
+    lookback_days = int(os.getenv("CUSTOMER_EVENT_SEED_LOOKBACK_DAYS", "30"))
+    rng_seed = int(os.getenv("CUSTOMER_EVENT_SEED_RANDOM_SEED", "42"))
+    rng = random.Random(rng_seed)
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+    for day_offset in range(lookback_days):
+        day = now - timedelta(days=day_offset)
+        for zone in SYNTHETIC_EVENT_ZONES:
+            base_lat, base_lon = _resolve_zone_coordinates(zone)
+            altas = rng.randint(0, 4)
+            bajas = rng.randint(0, 3)
+            for _ in range(altas):
+                event_time = day.replace(
+                    hour=8 + rng.randint(0, 6),
+                    minute=rng.randint(0, 59),
+                    second=rng.randint(0, 59),
+                )
+                register_customer_event(
+                    "alta",
+                    zone=zone,
+                    city="Córdoba",
+                    lat=base_lat,
+                    lon=base_lon,
+                    timestamp=event_time,
+                    source="synthetic",
+                    metadata={"seed": True},
+                )
+            for _ in range(bajas):
+                event_time = day.replace(
+                    hour=14 + rng.randint(0, 5),
+                    minute=rng.randint(0, 59),
+                    second=rng.randint(0, 59),
+                )
+                register_customer_event(
+                    "baja",
+                    zone=zone,
+                    city="Córdoba",
+                    lat=base_lat,
+                    lon=base_lon,
+                    timestamp=event_time,
+                    source="synthetic",
+                    metadata={"seed": True},
+                )
+
+
+_seed_synthetic_customer_events()
 
 
 def record_incident(kind: str, detail: Dict[str, Any]) -> None:
@@ -416,6 +578,87 @@ def record_audit(entry: AuditEntry) -> None:
         entry.dry_run,
         entry.detail,
     )
+
+
+def _parse_iso8601(value: str) -> datetime:
+    cleaned = value.strip()
+    if cleaned.endswith("Z"):
+        cleaned = f"{cleaned[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(cleaned)
+    except ValueError:
+        logger.debug("Invalid timestamp for customer event: %s", value)
+        return datetime.now(timezone.utc)
+
+
+def _filter_customer_events(
+    lookback_days: int,
+    *,
+    zone: Optional[str] = None,
+    event_type: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    selected: List[Dict[str, Any]] = []
+    for event in reversed(CUSTOMER_EVENTS):
+        ts = _parse_iso8601(str(event["timestamp"]))
+        if ts < since:
+            continue
+        if zone and event.get("zone") != zone:
+            continue
+        if event_type and event.get("event_type") != event_type:
+            continue
+        event_copy = dict(event)
+        event_copy["timestamp"] = ts.isoformat()
+        selected.append(event_copy)
+    return selected
+
+
+def _summarize_customer_events(events: List[Dict[str, Any]]) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
+    totals = {"altas": 0, "bajas": 0, "neto": 0}
+    per_zone: Dict[str, Dict[str, Any]] = {}
+    for event in events:
+        zone_name = event.get("zone") or DEFAULT_ZONE_LABEL
+        zone_entry = per_zone.setdefault(
+            zone_name,
+            {
+                "zone": zone_name,
+                "altas": 0,
+                "bajas": 0,
+                "lat": None,
+                "lon": None,
+                "city": event.get("city"),
+            },
+        )
+        if event.get("event_type") == "alta":
+            zone_entry["altas"] += 1
+            totals["altas"] += 1
+        else:
+            zone_entry["bajas"] += 1
+            totals["bajas"] += 1
+
+        if zone_entry["lat"] is None and event.get("lat") is not None:
+            zone_entry["lat"] = event.get("lat")
+        if zone_entry["lon"] is None and event.get("lon") is not None:
+            zone_entry["lon"] = event.get("lon")
+        if not zone_entry.get("city") and event.get("city"):
+            zone_entry["city"] = event.get("city")
+
+    for zone_name, zone_entry in per_zone.items():
+        zone_entry["neto"] = zone_entry["altas"] - zone_entry["bajas"]
+        if zone_entry.get("lat") is None or zone_entry.get("lon") is None:
+            fallback_lat, fallback_lon = _resolve_zone_coordinates(zone_name)
+            if zone_entry.get("lat") is None:
+                zone_entry["lat"] = fallback_lat
+            if zone_entry.get("lon") is None:
+                zone_entry["lon"] = fallback_lon
+
+    totals["neto"] = totals["altas"] - totals["bajas"]
+    ordered_zones = sorted(
+        per_zone.values(),
+        key=lambda item: (item.get("neto", 0), item.get("altas", 0)),
+        reverse=True,
+    )
+    return totals, ordered_zones
 
 
 def _safe_response_payload(response: httpx.Response) -> Any:
@@ -1140,6 +1383,16 @@ async def provision_onu(
                 timestamp=timestamp,
             )
         )
+        if customer:
+            register_customer_event(
+                "alta",
+                customer=customer,
+                source="runtime",
+                metadata={
+                    "trigger": "provision",
+                    "status": result.get("status"),
+                },
+            )
         return result
     except HTTPException as exc:
         PROVISION_COUNTER.labels(result="error").inc()
@@ -1366,6 +1619,17 @@ async def decommission_customer(
                 timestamp=timestamp,
             )
         )
+        if customer:
+            register_customer_event(
+                "baja",
+                customer=customer,
+                source="runtime",
+                metadata={
+                    "trigger": "decommission",
+                    "feature_status": geogrid_result,
+                    "onu_status": smartolt_result,
+                },
+            )
         return result
     except HTTPException as exc:
         DECOMMISSION_COUNTER.labels(result="error").inc()
@@ -1516,7 +1780,254 @@ async def reset_mocks(settings: EnvConfig = Depends(get_settings)) -> Dict[str, 
     INCIDENT_LOG.clear()
     AUDIT_LOG.clear()
     INCIDENT_GAUGE.set(0)
+    CUSTOMER_EVENTS.clear()
     return results
+
+
+@app.post(
+    "/analytics/customer-events",
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar manualmente un evento de alta o baja",
+)
+async def create_customer_event(
+    payload: CustomerEventRequest,
+    settings: EnvConfig = Depends(get_settings),
+) -> Dict[str, Any]:
+    customer: Optional[Dict[str, Any]] = None
+    if payload.customer_id is not None:
+        isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
+        async with httpx.AsyncClient(**isp_client_kwargs) as client:
+            customer = await fetch_json(
+                client,
+                "GET",
+                f"/customers/{payload.customer_id}",
+                service="isp",
+                settings=settings,
+                region_name=isp_region,
+            )
+
+    event_metadata = dict(payload.metadata)
+    if payload.source and "origin" not in event_metadata:
+        event_metadata["origin"] = payload.source
+
+    event_entry = register_customer_event(
+        payload.event_type,
+        customer=customer,
+        zone=payload.zone,
+        city=payload.city,
+        lat=payload.lat,
+        lon=payload.lon,
+        timestamp=payload.timestamp,
+        source=payload.source or "manual",
+        metadata=event_metadata,
+        customer_id=payload.customer_id,
+    )
+    return {"event": event_entry}
+
+
+@app.get(
+    "/analytics/customer-events",
+    summary="Eventos de altas y bajas georreferenciados",
+)
+async def get_customer_events(
+    lookback_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="Cantidad de días hacia atrás a considerar.",
+    ),
+    limit: int = Query(
+        default=500,
+        ge=1,
+        le=CUSTOMER_EVENT_BUFFER_SIZE,
+        description="Cantidad máxima de eventos más recientes a devolver.",
+    ),
+    zone: Optional[str] = Query(
+        default=None,
+        description="Filtra por zona/barrio exacto.",
+    ),
+    event_type: Optional[Literal["alta", "baja"]] = Query(
+        default=None,
+        description="Filtra por tipo de evento.",
+    ),
+) -> List[Dict[str, Any]]:
+    events = _filter_customer_events(lookback_days, zone=zone, event_type=event_type)
+    return events[:limit]
+
+
+@app.get(
+    "/analytics/customer-events/summary",
+    summary="Totales de altas y bajas por zona",
+)
+async def get_customer_events_summary(
+    lookback_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="Cantidad de días hacia atrás a considerar.",
+    ),
+    zone: Optional[str] = Query(
+        default=None,
+        description="Filtra por zona/barrio exacto.",
+    ),
+    event_type: Optional[Literal["alta", "baja"]] = Query(
+        default=None,
+        description="Filtra por tipo de evento.",
+    ),
+) -> Dict[str, Any]:
+    events = _filter_customer_events(lookback_days, zone=zone, event_type=event_type)
+    totals, zones = _summarize_customer_events(events)
+    stats = [
+        {"metric": "altas", "value": totals["altas"]},
+        {"metric": "bajas", "value": totals["bajas"]},
+        {"metric": "neto", "value": totals["neto"]},
+    ]
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "lookback_days": lookback_days,
+        "filters": {
+            "zone": zone,
+            "event_type": event_type,
+        },
+        "stats": stats,
+        "totals": totals,
+        "zones": zones,
+    }
+
+
+@app.get(
+    "/analytics/customer-events/metrics",
+    summary="Totales agregados de altas/bajas/neto",
+)
+async def get_customer_event_metrics(
+    lookback_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="Cantidad de días hacia atrás a considerar.",
+    ),
+    zone: Optional[str] = Query(
+        default=None,
+        description="Filtra por zona/barrio exacto.",
+    ),
+    event_type: Optional[Literal["alta", "baja"]] = Query(
+        default=None,
+        description="Filtra por tipo de evento.",
+    ),
+) -> Dict[str, Any]:
+    events = _filter_customer_events(lookback_days, zone=zone, event_type=event_type)
+    totals, _ = _summarize_customer_events(events)
+    return {
+        "altas": totals["altas"],
+        "bajas": totals["bajas"],
+        "neto": totals["neto"],
+    }
+
+
+@app.get(
+    "/analytics/customer-events/time-series",
+    summary="Serie temporal de altas y bajas por zona",
+)
+async def get_customer_events_time_series(
+    lookback_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="Cantidad de días hacia atrás a considerar.",
+    ),
+    zone: Optional[str] = Query(
+        default=None,
+        description="Filtra por zona/barrio exacto.",
+    ),
+) -> List[Dict[str, Any]]:
+    events = _filter_customer_events(lookback_days, zone=zone)
+    buckets: Dict[Tuple[str, date], Dict[str, Any]] = defaultdict(
+        lambda: {"altas": 0, "bajas": 0, "lat": None, "lon": None}
+    )
+    for event in events:
+        timestamp = _parse_iso8601(event["timestamp"])
+        day_key = timestamp.date()
+        zone_name = event.get("zone") or DEFAULT_ZONE_LABEL
+        bucket = buckets[(zone_name, day_key)]
+        if event.get("event_type") == "alta":
+            bucket["altas"] += 1
+        else:
+            bucket["bajas"] += 1
+        if bucket.get("lat") is None and event.get("lat") is not None:
+            bucket["lat"] = event.get("lat")
+        if bucket.get("lon") is None and event.get("lon") is not None:
+            bucket["lon"] = event.get("lon")
+
+    response: List[Dict[str, Any]] = []
+    for (zone_name, day_key), counts in sorted(
+        buckets.items(), key=lambda item: (item[0][1], item[0][0])
+    ):
+        day_start = datetime.combine(day_key, datetime.min.time()).replace(
+            tzinfo=timezone.utc
+        )
+        lat = counts.get("lat")
+        lon = counts.get("lon")
+        if lat is None or lon is None:
+            fallback_lat, fallback_lon = _resolve_zone_coordinates(zone_name)
+            if lat is None:
+                lat = fallback_lat
+            if lon is None:
+                lon = fallback_lon
+        response.append(
+            {
+                "timestamp": day_start.isoformat(),
+                "zone": zone_name,
+                "altas": counts["altas"],
+                "bajas": counts["bajas"],
+                "neto": counts["altas"] - counts["bajas"],
+                "lat": lat,
+                "lon": lon,
+            }
+        )
+    return response
+
+
+@app.get(
+    "/analytics/customer-events/geo",
+    summary="Eventos georreferenciados segmentados por tipo",
+)
+async def get_customer_events_geo(
+    lookback_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="Cantidad de días hacia atrás a considerar.",
+    ),
+    zone: Optional[str] = Query(
+        default=None,
+        description="Filtra por zona/barrio exacto.",
+    ),
+) -> Dict[str, List[Dict[str, Any]]]:
+    events = _filter_customer_events(lookback_days, zone=zone)
+    altas: List[Dict[str, Any]] = []
+    bajas: List[Dict[str, Any]] = []
+    for event in events:
+        entry = {
+            "event_id": event["event_id"],
+            "timestamp": event["timestamp"],
+            "zone": event.get("zone"),
+            "city": event.get("city"),
+            "customer_id": event.get("customer_id"),
+            "lat": event.get("lat"),
+            "lon": event.get("lon"),
+            "source": event.get("source"),
+        }
+        if entry["lat"] is None or entry["lon"] is None:
+            fallback_lat, fallback_lon = _resolve_zone_coordinates(entry.get("zone") or DEFAULT_ZONE_LABEL)
+            if entry["lat"] is None:
+                entry["lat"] = fallback_lat
+            if entry["lon"] is None:
+                entry["lon"] = fallback_lon
+        if event.get("event_type") == "alta":
+            altas.append(entry)
+        else:
+            bajas.append(entry)
+    return {"altas": altas, "bajas": bajas}
 
 
 @app.get("/incidents")
