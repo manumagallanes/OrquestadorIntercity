@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import random
 import time
@@ -435,6 +436,9 @@ SYNTHETIC_EVENT_ZONES: List[str] = [
 DEFAULT_COORDINATE_FALLBACK: Tuple[float, float] = ZONE_BASE_COORDINATES.get(
     "Centro", (-31.417, -64.183)
 )
+DEFAULT_COORDINATE_FALLBACK: Tuple[float, float] = ZONE_BASE_COORDINATES.get(
+    "Centro", (-31.417, -64.183)
+)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -503,6 +507,72 @@ def _events_to_feature_collection(events: List[Dict[str, Any]]) -> Dict[str, Any
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "count": len(features),
     }
+
+
+def _build_events_table_frame(
+    ref_id: str, events: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    columns = [
+        {"text": "timestamp", "type": "time"},
+        {"text": "timestamp_iso", "type": "string"},
+        {"text": "zone", "type": "string"},
+        {"text": "lat", "type": "number"},
+        {"text": "lon", "type": "number"},
+        {"text": "customer_id", "type": "string"},
+        {"text": "city", "type": "string"},
+        {"text": "event_type", "type": "string"},
+    ]
+    rows: List[List[Any]] = []
+    for event in events:
+        timestamp_raw = event.get("timestamp")
+        timestamp_dt = (
+            _parse_iso8601(str(timestamp_raw)) if timestamp_raw is not None else datetime.now(timezone.utc)
+        )
+        timestamp_ms = int(timestamp_dt.timestamp() * 1000)
+        rows.append(
+            [
+                timestamp_ms,
+                timestamp_dt.isoformat(),
+                event.get("zone") or DEFAULT_ZONE_LABEL,
+                event.get("lat"),
+                event.get("lon"),
+                "" if event.get("customer_id") is None else str(event.get("customer_id")),
+                event.get("city") or "",
+                event.get("event_type") or "",
+            ]
+        )
+    return {
+        "refId": ref_id,
+        "type": "table",
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def _build_empty_table_frame(ref_id: str) -> Dict[str, Any]:
+    return _build_events_table_frame(ref_id, [])
+
+
+def _resolve_lookback_days(range_info: Dict[str, Any], candidate: Any) -> int:
+    if candidate is not None:
+        try:
+            value = int(candidate)
+            if value >= 1:
+                return value
+        except (TypeError, ValueError):
+            pass
+    time_from = range_info.get("from")
+    time_to = range_info.get("to")
+    if time_from and time_to:
+        try:
+            parsed_from = _parse_iso8601(str(time_from))
+            parsed_to = _parse_iso8601(str(time_to))
+            delta = parsed_to - parsed_from
+            days = delta.total_seconds() / 86400.0
+            return max(1, int(math.ceil(days)))
+        except Exception:
+            pass
+    return 30
 
 
 def register_customer_event(
@@ -2129,6 +2199,54 @@ async def get_customer_events_map_bajas(
     feature_collection["event_type"] = "baja"
     feature_collection["zone_filter"] = zone
     return feature_collection
+
+
+@app.get("/")
+async def root() -> Dict[str, Any]:
+    return {"status": "ok", "service": "orchestrator"}
+
+
+@app.post("/query")
+async def grafana_query(request: Request) -> List[Dict[str, Any]]:
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError as exc:
+        logger.warning("Invalid JSON payload on /query: %s", exc)
+        return []
+
+    range_info = payload.get("range") or {}
+    targets = payload.get("targets") or []
+    if not isinstance(targets, list):
+        return []
+
+    responses: List[Dict[str, Any]] = []
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        target_name = target.get("target")
+        if not target_name:
+            continue
+        ref_id = str(target.get("refId", "A"))
+        target_payload = target.get("payload") or {}
+        if not isinstance(target_payload, dict):
+            target_payload = {}
+
+        lookback_days = _resolve_lookback_days(range_info, target_payload.get("lookback_days"))
+        zone_filter = target_payload.get("zone")
+        if isinstance(zone_filter, str) and not zone_filter.strip():
+            zone_filter = None
+
+        event_type = target_payload.get("event_type")
+        if event_type not in {"alta", "baja"}:
+            event_type = None
+
+        if target_name == "customer_events_map":
+            events = _filter_customer_events(lookback_days, zone=zone_filter, event_type=event_type)
+            resolved_events = [_event_with_resolved_coordinates(event) for event in events]
+            responses.append(_build_events_table_frame(ref_id, resolved_events))
+        else:
+            responses.append(_build_empty_table_frame(ref_id))
+    return responses
 
 
 @app.get("/incidents")

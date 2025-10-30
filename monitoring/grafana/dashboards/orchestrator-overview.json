@@ -478,88 +478,94 @@
       },
       "id": 8,
       "options": {
-        "basemap": {
-          "type": "carto",
+      "basemap": {
+        "type": "carto",
+        "config": {
+          "style": "positron"
+        }
+      },
+      "controls": {
+        "showZoom": true,
+        "showAttribution": true,
+        "mouseWheelZoom": true
+      },
+      "layers": [
+        {
+          "type": "markers",
+          "name": "Altas",
           "config": {
-            "style": "positron"
-          }
-        },
-        "controls": {
-          "showZoom": true,
-          "showAttribution": true,
-          "mouseWheelZoom": true
-        },
-        "layers": [
-          {
-            "type": "geojson",
-            "name": "Altas",
-            "config": {
-              "showLegend": true,
-              "style": {
-                "color": "#2ecc71",
-                "fillOpacity": 0.7,
-                "lineWidth": 0,
-                "pointColor": "#2ecc71",
-                "pointSize": 8
-              },
-              "popupContent": "<strong>{{properties.zone}}</strong><br/>Cliente: {{properties.customer_id}}<br/>{{properties.timestamp}}"
-            },
-            "data": {
-              "format": "geojson",
-              "source": "A"
-            }
+            "color": "#2ecc71",
+            "size": 8,
+            "showLegend": true
           },
-          {
-            "type": "geojson",
-            "name": "Bajas",
-            "config": {
-              "showLegend": true,
-              "style": {
-                "color": "#e74c3c",
-                "fillOpacity": 0.7,
-                "lineWidth": 0,
-                "pointColor": "#e74c3c",
-                "pointSize": 8
-              },
-              "popupContent": "<strong>{{properties.zone}}</strong><br/>Cliente: {{properties.customer_id}}<br/>{{properties.timestamp}}"
-            },
-            "data": {
-              "format": "geojson",
-              "source": "B"
+          "data": {
+            "format": "table",
+            "source": "A",
+            "mapping": {
+              "latitude": "lat",
+              "longitude": "lon",
+              "name": "zone",
+              "time": "timestamp"
             }
           }
-        ],
-        "view": {
-          "lat": -31.42,
+        },
+        {
+          "type": "markers",
+          "name": "Bajas",
+          "config": {
+            "color": "#e74c3c",
+            "size": 8,
+            "showLegend": true
+          },
+          "data": {
+            "format": "table",
+            "source": "B",
+            "mapping": {
+              "latitude": "lat",
+              "longitude": "lon",
+              "name": "zone",
+              "time": "timestamp"
+            }
+          }
+        }
+      ],
+      "view": {
+        "lat": -31.42,
           "lon": -64.18,
           "zoom": 11
         }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "simpod-json-datasource",
-            "uid": "orchestrator-analytics"
-          },
-          "method": "GET",
-          "queryParams": "lookback_days=30",
-          "refId": "A",
-          "urlPath": "analytics/customer-events/map/altas"
+    },
+    "targets": [
+      {
+        "datasource": {
+          "type": "simpod-json-datasource",
+          "uid": "orchestrator-analytics"
         },
-        {
-          "datasource": {
-            "type": "simpod-json-datasource",
-            "uid": "orchestrator-analytics"
-          },
-          "method": "GET",
-          "queryParams": "lookback_days=30",
-          "refId": "B",
-          "urlPath": "analytics/customer-events/map/bajas"
-        }
-      ],
-      "title": "Altas y bajas georreferenciadas",
-      "transformations": [],
-      "type": "geomap"
+        "editorMode": "code",
+        "payload": {
+          "event_type": "alta",
+          "lookback_days": 30
+        },
+        "refId": "A",
+        "target": "customer_events_map"
+      },
+      {
+        "datasource": {
+          "type": "simpod-json-datasource",
+          "uid": "orchestrator-analytics"
+        },
+        "editorMode": "code",
+        "payload": {
+          "event_type": "baja",
+          "lookback_days": 30
+        },
+        "refId": "B",
+        "target": "customer_events_map"
+      }
+    ],
+    "title": "Altas y bajas georreferenciadas",
+    "transformations": [],
+    "type": "geomap"
     }
   ],
   "refresh": "30s",

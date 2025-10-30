@@ -229,7 +229,7 @@ El middleware HTTP y los flujos de negocio reportan los siguientes indicadores e
 - `orchestrator_incidents_buffer_size`
 - `orchestrator_customer_events_total{event_type,zone}`
 
-Complementariamente, los endpoints JSON bajo `/analytics/customer-events*` (incluyendo `/analytics/customer-events/map/altas` y `/analytics/customer-events/map/bajas`, que devuelven colecciones GeoJSON) entregan información georreferenciada y agregados listos para consumir desde Grafana (volúmenes por zona, series temporales y feed de eventos).
+Complementariamente, los endpoints JSON bajo `/analytics/customer-events*` (incluyendo `/analytics/customer-events/map/altas` y `/analytics/customer-events/map/bajas`, que devuelven colecciones GeoJSON) entregan información georreferenciada y agregados listos para consumir desde Grafana (volúmenes por zona, series temporales y feed de eventos). Además, el orquestador implementa `/query` compatible con el datasource JSON de Grafana para generar tablas dinámicas con coordenadas ya validadas (`target: customer_events_map`).
 
 Para generar datos de prueba sin tráfico real, exporta `ORCHESTRATOR_SEED_CUSTOMER_EVENTS=true` antes de iniciar el contenedor del orquestador o registra eventos manuales con `POST /analytics/customer-events`.
 
@@ -240,7 +240,7 @@ El dashboard principal (`monitoring/grafana/dashboards/orchestrator-overview.jso
 - Indicadores acumulados de altas, bajas y crecimiento neto basados en `orchestrator_customer_events_total`.
 - Conteo de incidentes activos (`orchestrator_incidents_buffer_size`) y tabla categorizada de incidentes acumulados (`sum by (kind)(orchestrator_incidents_total)`).
 - Serie temporal de incidentes clasificados por `kind`.
-- Mapa georreferenciado que consume `GET /analytics/customer-events/map/altas` y `.../bajas` (GeoJSON), con marcadores verdes para altas y rojos para bajas y popups con cliente/zona (fallback automático a coordenadas de la zona).
+- Mapa georreferenciado que consume el `target customer_events_map` vía `/query`, dibujando marcadores verdes para altas y rojos para bajas con información contextual (zona, cliente, ciudad) y fallback automático de coordenadas.
 
 Todos los paneles admiten filtros temporales desde Grafana y pueden extenderse para cubrir nuevos indicadores o fuentes de datos corporativas.
 
