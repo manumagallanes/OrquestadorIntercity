@@ -432,6 +432,9 @@ SYNTHETIC_EVENT_ZONES: List[str] = [
     "Alta Córdoba",
     "Villa Belgrano",
 ]
+DEFAULT_COORDINATE_FALLBACK: Tuple[float, float] = ZONE_BASE_COORDINATES.get(
+    "Centro", (-31.417, -64.183)
+)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -448,6 +451,58 @@ def _resolve_zone_coordinates(zone: str) -> Tuple[Optional[float], Optional[floa
     if coords:
         return coords
     return (None, None)
+
+
+def _event_with_resolved_coordinates(event: Dict[str, Any]) -> Dict[str, Any]:
+    zone_name = event.get("zone") or DEFAULT_ZONE_LABEL
+    lat = event.get("lat")
+    lon = event.get("lon")
+    if lat is None or lon is None:
+        fallback_lat, fallback_lon = _resolve_zone_coordinates(zone_name)
+        if lat is None:
+            lat = fallback_lat if fallback_lat is not None else DEFAULT_COORDINATE_FALLBACK[0]
+        if lon is None:
+            lon = fallback_lon if fallback_lon is not None else DEFAULT_COORDINATE_FALLBACK[1]
+    return {
+        "event_id": event.get("event_id"),
+        "timestamp": event.get("timestamp"),
+        "event_type": event.get("event_type"),
+        "zone": zone_name,
+        "city": event.get("city"),
+        "customer_id": event.get("customer_id"),
+        "lat": lat,
+        "lon": lon,
+    }
+
+
+def _events_to_feature_collection(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    features: List[Dict[str, Any]] = []
+    for raw_event in events:
+        event = _event_with_resolved_coordinates(raw_event)
+        lat = event.get("lat")
+        lon = event.get("lon")
+        if lat is None or lon is None:
+            continue
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {
+                    "event_id": event.get("event_id"),
+                    "timestamp": event.get("timestamp"),
+                    "event_type": event.get("event_type"),
+                    "zone": event.get("zone"),
+                    "city": event.get("city"),
+                    "customer_id": event.get("customer_id"),
+                },
+            }
+        )
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "count": len(features),
+    }
 
 
 def register_customer_event(
@@ -2028,6 +2083,52 @@ async def get_customer_events_geo(
         else:
             bajas.append(entry)
     return {"altas": altas, "bajas": bajas}
+
+
+@app.get(
+    "/analytics/customer-events/map/altas",
+    summary="Eventos de alta con coordenadas resueltas",
+)
+async def get_customer_events_map_altas(
+    lookback_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="Cantidad de días hacia atrás a considerar.",
+    ),
+    zone: Optional[str] = Query(
+        default=None,
+        description="Filtra por zona/barrio exacto.",
+    ),
+) -> Dict[str, Any]:
+    events = _filter_customer_events(lookback_days, zone=zone, event_type="alta")
+    feature_collection = _events_to_feature_collection(events)
+    feature_collection["event_type"] = "alta"
+    feature_collection["zone_filter"] = zone
+    return feature_collection
+
+
+@app.get(
+    "/analytics/customer-events/map/bajas",
+    summary="Eventos de baja con coordenadas resueltas",
+)
+async def get_customer_events_map_bajas(
+    lookback_days: int = Query(
+        default=30,
+        ge=1,
+        le=365,
+        description="Cantidad de días hacia atrás a considerar.",
+    ),
+    zone: Optional[str] = Query(
+        default=None,
+        description="Filtra por zona/barrio exacto.",
+    ),
+) -> Dict[str, Any]:
+    events = _filter_customer_events(lookback_days, zone=zone, event_type="baja")
+    feature_collection = _events_to_feature_collection(events)
+    feature_collection["event_type"] = "baja"
+    feature_collection["zone_filter"] = zone
+    return feature_collection
 
 
 @app.get("/incidents")

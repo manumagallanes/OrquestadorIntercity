@@ -200,9 +200,25 @@ curl -X POST http://localhost:8000/analytics/customer-events \
 
 ## 8. Observabilidad
 
-### 8.1 Métricas Prometheus
+### 8.1 Despliegue de Prometheus y Grafana
 
-El middleware `@app.middleware("http")` mide latencia y contabiliza solicitudes, mientras que contadores específicos registran resultados por flujo. Métricas relevantes:
+El directorio `monitoring/` contiene todo lo necesario para levantar un stack de observabilidad acoplado al laboratorio:
+
+- `monitoring/prometheus.yml` define un `scrape_config` que apunta al `orchestrator:8000/metrics` cada 15 segundos.
+- `monitoring/grafana/provisioning/datasources/prometheus.yml` crea dos datasources: Prometheus (uid `prometheus`) y un datasource JSON (uid `orchestrator-analytics`) que consulta directamente los endpoints de analítica.
+- `monitoring/grafana/provisioning/dashboards/dashboards.yml` carga automáticamente los dashboards ubicados en `monitoring/grafana/dashboards/`.
+
+Ejecución recomendada:
+
+```bash
+docker compose up -d prometheus grafana orchestrator
+```
+
+Grafana queda disponible en `http://localhost:3000` (usuario `admin`, contraseña `admin`). Prometheus está accesible en `http://localhost:9090`.
+
+### 8.2 Métricas expuestas
+
+El middleware HTTP y los flujos de negocio reportan los siguientes indicadores en formato Prometheus:
 
 - `orchestrator_request_latency_seconds_bucket{endpoint,method}`
 - `orchestrator_requests_total{endpoint,method,status}`
@@ -213,26 +229,20 @@ El middleware `@app.middleware("http")` mide latencia y contabiliza solicitudes,
 - `orchestrator_incidents_buffer_size`
 - `orchestrator_customer_events_total{event_type,zone}`
 
-Endpoints JSON automáticos para dashboards:
+Complementariamente, los endpoints JSON bajo `/analytics/customer-events*` (incluyendo `/analytics/customer-events/map/altas` y `/analytics/customer-events/map/bajas`, que devuelven colecciones GeoJSON) entregan información georreferenciada y agregados listos para consumir desde Grafana (volúmenes por zona, series temporales y feed de eventos).
 
-- `GET /analytics/customer-events`: feed crudo de altas/bajas georreferenciadas.
-- `POST /analytics/customer-events`: registra un evento manual (útil para pruebas antes de automatizar flujos).
-- `GET /analytics/customer-events/summary`: agregados por zona con coordenadas promedio.
-- `GET /analytics/customer-events/time-series`: serie diaria por zona para elaborar tendencias.
-- `GET /analytics/customer-events/geo`: listado de eventos con coordenadas, segmentados en altas/bajas.
+Para generar datos de prueba sin tráfico real, exporta `ORCHESTRATOR_SEED_CUSTOMER_EVENTS=true` antes de iniciar el contenedor del orquestador o registra eventos manuales con `POST /analytics/customer-events`.
 
-> Nota: el generador de datos sintéticos (`ORCHESTRATOR_SEED_CUSTOMER_EVENTS`) ahora está deshabilitado por defecto. Si necesitas poblar el dashboard sin tráfico real, exporta la variable a `true` antes de iniciar el servicio.
+### 8.3 Dashboard «Monitoreo Orquestador Intercity»
 
-### 8.2 Dashboards de Grafana
+El dashboard principal (`monitoring/grafana/dashboards/orchestrator-overview.json`) incluye:
 
-La carpeta **Orchestrator** incluye paneles preparados:
+- Indicadores acumulados de altas, bajas y crecimiento neto basados en `orchestrator_customer_events_total`.
+- Conteo de incidentes activos (`orchestrator_incidents_buffer_size`) y tabla categorizada de incidentes acumulados (`sum by (kind)(orchestrator_incidents_total)`).
+- Serie temporal de incidentes clasificados por `kind`.
+- Mapa georreferenciado que consume `GET /analytics/customer-events/map/altas` y `.../bajas` (GeoJSON), con marcadores verdes para altas y rojos para bajas y popups con cliente/zona (fallback automático a coordenadas de la zona).
 
-- **Overview**: volumen de operaciones, latencias p95 y distribución de resultados.
-- **Movimientos de Clientes**: overview de altas/bajas netas (Prometheus), evolución diaria, ranking visual por zona, distribución geográfica y feed de eventos vía `/analytics/customer-events*`.
-- **Incidentes recientes**: tabla conectada al endpoint `/incidents`.
-- **Actividad en cinco minutos**: seguimiento de sync, provisionamientos y bajas.
-
-Los dashboards se alimentan de Prometheus, del datasource JSON del orquestador y pueden ampliarse según las necesidades del despliegue. Para generar datos de ejemplo se instrumentó un `seed` interno y se añadió `/analytics/customer-events` (POST) para cargar altas/bajas manuales; en producción bastará con exponer la zona desde ISP Cube y dejar que los eventos runtime completen la serie.
+Todos los paneles admiten filtros temporales desde Grafana y pueden extenderse para cubrir nuevos indicadores o fuentes de datos corporativas.
 
 ---
 

@@ -1,0 +1,21 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    uid: prometheus
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+    editable: false
+
+  - name: Orchestrator Analytics
+    type: simpod-json-datasource
+    access: proxy
+    url: http://orchestrator:8000
+    uid: orchestrator-analytics
+    jsonData:
+      httpMethod: GET
+    editable: false
