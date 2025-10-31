@@ -77,6 +77,10 @@ El campo `default_region` determina la región activa cuando no se indica otra e
 
 El endpoint `GET /config` expone la configuración efectiva con las sustituciones aplicadas, mientras que `POST /config` actualiza el flag `dry_run` en tiempo de ejecución.
 
+### 4.3 Dataset inicial de clientes
+
+El archivo `config/seeds/customers.json` define un conjunto base de clientes (IDs 202, 912, 404, 707, 808) que reflejan los casos de uso documentados: clientes listos para automatizar, con flag deshabilitado, con datos incompletos y en estado inactivo. El orquestador los sincroniza automáticamente con el mock de ISP-Cube durante el arranque y cada vez que se ejecuta `POST /reset`, de modo que las pruebas y dashboards partan de una base consistente sin necesidad de cargar datos manualmente.
+
 ---
 
 ## 5. Puesta en marcha local
@@ -134,6 +138,8 @@ Los incidentes `integration_disabled`, `missing_fields` e `invalid_coordinates` 
    - En modo simulación se devuelve un resultado informativo sin invocar SmartOLT.
    - En modo ejecución se llama a `/onu/authorize`, con reintentos y circuit breaker configurados.
 4. Registro en auditoría con el resultado (`authorized`, `already_authorized`, simulaciones) y actualización de métricas.
+
+El orquestador también valida que el par `olt_id` + `board` + `pon_port` no esté asignado a otra ONU distinta; de ser así dispara el incidente `hardware_port_conflict` y devuelve `409 Conflict`.
 
 ### 6.3 Baja técnica (`POST /decommission/customer`)
 
@@ -227,9 +233,14 @@ El middleware HTTP y los flujos de negocio reportan los siguientes indicadores e
 - `orchestrator_decommission_total{result}`
 - `orchestrator_incidents_total{kind}`
 - `orchestrator_incidents_buffer_size`
+- `orchestrator_incidents_resolved_total{kind}`
 - `orchestrator_customer_events_total{event_type,zone}`
 
-Complementariamente, los endpoints JSON bajo `/analytics/customer-events*` (incluyendo `/analytics/customer-events/map/altas` y `/analytics/customer-events/map/bajas`, que devuelven colecciones GeoJSON) entregan información georreferenciada y agregados listos para consumir desde Grafana (volúmenes por zona, series temporales y feed de eventos). Además, el orquestador implementa `/query` compatible con el datasource JSON de Grafana para generar tablas dinámicas con coordenadas ya validadas (`target: customer_events_map`).
+Complementariamente, los endpoints JSON bajo `/analytics/customer-events*` (incluyendo `/analytics/customer-events/map/altas` y `/analytics/customer-events/map/bajas`, que devuelven colecciones GeoJSON) entregan información georreferenciada y agregados listos para consumir desde Grafana (volúmenes por zona, series temporales y feed de eventos). Además, el orquestador implementa `/query` compatible con el datasource JSON de Grafana para generar tablas dinámicas con coordenadas ya validadas (`target: customer_events_map`) y para exponer incidentes corregidos mediante `target: incidents_resolved`.
+
+Otros endpoints útiles para dashboards:
+
+- `GET /incidents/resolved`: historial de incidentes corregidos, filtrable por `customer_id`, `kind` y ventana de tiempo.
 
 Para generar datos de prueba sin tráfico real, exporta `ORCHESTRATOR_SEED_CUSTOMER_EVENTS=true` antes de iniciar el contenedor del orquestador o registra eventos manuales con `POST /analytics/customer-events`.
 
@@ -239,6 +250,7 @@ El dashboard principal (`monitoring/grafana/dashboards/orchestrator-overview.jso
 
 - Indicadores acumulados de altas, bajas y crecimiento neto basados en `orchestrator_customer_events_total`.
 - Conteo de incidentes activos (`orchestrator_incidents_buffer_size`) y tabla categorizada de incidentes acumulados (`sum by (kind)(orchestrator_incidents_total)`).
+- Tabla de incidentes resueltos (`target incidents_resolved`) que incluye fecha de resolución, cliente y contexto.
 - Serie temporal de incidentes clasificados por `kind`.
 - Mapa georreferenciado que consume el `target customer_events_map` vía `/query`, dibujando marcadores verdes para altas y rojos para bajas con información contextual (zona, cliente, ciudad) y fallback automático de coordenadas.
 
@@ -253,6 +265,7 @@ El servicio `ui` permite ejecutar los flujos sin uso de CLI:
 - Formularios para sincronización, provisionamiento y baja técnica.
 - Visualización de incidentes, auditorías y features en tiempo real.
 - Barra lateral para modificar URLs base, usuario (`X-Orchestrator-User`), lanzar `/reset` y consultar `/config`.
+- Herramientas para gestionar clientes en el mock de ISP-Cube (crear, editar, activar/desactivar integración y estado) sin recurrir a llamadas manuales.
 
 Esta interfaz es útil para demostraciones y para usuarios que no desean interactuar directamente con los endpoints REST.
 

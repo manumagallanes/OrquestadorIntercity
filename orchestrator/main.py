@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
 from typing_extensions import Literal
@@ -85,8 +85,36 @@ class CustomerEventRequest(BaseModel):
 
 
 CONFIG_ROOT = Path(__file__).resolve().parent.parent / "config" / "environments"
+SEED_ROOT = Path(__file__).resolve().parent.parent / "config" / "seeds"
+CUSTOMER_SEED_FILE = SEED_ROOT / "customers.json"
+
 DEFAULT_ENVIRONMENT = "dev"
 RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
+
+
+def _load_customer_seed_dataset() -> List[Dict[str, Any]]:
+    if not CUSTOMER_SEED_FILE.exists():
+        logger.info("Customer seed file not found at %s; skipping seeding", CUSTOMER_SEED_FILE)
+        return []
+    try:
+        raw = CUSTOMER_SEED_FILE.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Unable to load customer seed dataset: %s", exc)
+        return []
+    if not isinstance(data, list):
+        logger.warning("Customer seed dataset must be a JSON array; received %s", type(data))
+        return []
+    sanitized: List[Dict[str, Any]] = []
+    for entry in data:
+        if isinstance(entry, dict):
+            sanitized.append(entry)
+        else:
+            logger.debug("Skipping non-object entry in customer seed dataset: %s", entry)
+    return sanitized
+
+
+CUSTOMER_SEED_DATA: List[Dict[str, Any]] = _load_customer_seed_dataset()
 
 
 def _resolve_env_reference(raw_value: Optional[str]) -> Optional[str]:
@@ -381,6 +409,11 @@ INCIDENT_COUNTER = Counter(
     "Incidents recorded by orchestrator",
     ["kind"],
 )
+INCIDENT_RESOLVED_COUNTER = Counter(
+    "orchestrator_incidents_resolved_total",
+    "Incidents marked as resolved",
+    ["kind"],
+)
 CUSTOMER_EVENT_COUNTER = Counter(
     "orchestrator_customer_events_total",
     "Altas y bajas de clientes registradas por zona",
@@ -408,10 +441,28 @@ REQUIRED_CUSTOMER_FIELDS: List[str] = [
 CORDOBA_LAT_RANGE: Tuple[float, float] = (-35.5, -29.0)
 CORDOBA_LON_RANGE: Tuple[float, float] = (-66.5, -62.0)
 
-INCIDENT_LOG: deque[Dict[str, Any]] = deque(
-    maxlen=int(os.getenv("INCIDENT_BUFFER_SIZE", "200"))
+INCIDENT_BUFFER_SIZE = int(os.getenv("INCIDENT_BUFFER_SIZE", "200"))
+RESOLVED_INCIDENT_BUFFER_SIZE = int(os.getenv("INCIDENT_RESOLVED_BUFFER_SIZE", "500"))
+
+INCIDENT_LOG: deque[Dict[str, Any]] = deque(maxlen=INCIDENT_BUFFER_SIZE)
+RESOLVED_INCIDENT_LOG: deque[Dict[str, Any]] = deque(
+    maxlen=RESOLVED_INCIDENT_BUFFER_SIZE
 )
 AUDIT_LOG: deque[AuditEntry] = deque(maxlen=int(os.getenv("AUDIT_BUFFER_SIZE", "500")))
+INCIDENT_KIND_LABELS: Dict[str, str] = {
+    "missing_fields": "Datos incompletos",
+    "missing_network_keys": "Identificadores de red faltantes",
+    "integration_disabled": "Integración deshabilitada",
+    "invalid_coordinates": "Coordenadas inválidas",
+    "hardware_mismatch": "Desajuste hardware/OLT",
+    "hardware_port_conflict": "Puerto PON ocupado",
+    "decommission_status_active": "Cliente activo al solicitar baja",
+    "decommission_missing_feature": "GeoGrid sin feature",
+    "decommission_missing_onu": "ONU inexistente en SmartOLT",
+    "geogrid_conflict": "Conflicto GeoGrid",
+    "isp_lookup_failure": "Error consulta ISP",
+    "smartolt_failure": "Error SmartOLT",
+}
 ZONE_BASE_COORDINATES: Dict[str, Tuple[float, float]] = {
     "Centro": (-31.417, -64.183),
     "Nueva Córdoba": (-31.4275, -64.1829),
@@ -436,9 +487,6 @@ SYNTHETIC_EVENT_ZONES: List[str] = [
 DEFAULT_COORDINATE_FALLBACK: Tuple[float, float] = ZONE_BASE_COORDINATES.get(
     "Centro", (-31.417, -64.183)
 )
-DEFAULT_COORDINATE_FALLBACK: Tuple[float, float] = ZONE_BASE_COORDINATES.get(
-    "Centro", (-31.417, -64.183)
-)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -455,6 +503,15 @@ def _resolve_zone_coordinates(zone: str) -> Tuple[Optional[float], Optional[floa
     if coords:
         return coords
     return (None, None)
+
+
+def _normalize_customer_id(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _event_with_resolved_coordinates(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -575,6 +632,193 @@ def _resolve_lookback_days(range_info: Dict[str, Any], candidate: Any) -> int:
     return 30
 
 
+async def _seed_isp_customers(settings: EnvConfig) -> Dict[str, int]:
+    if not CUSTOMER_SEED_DATA:
+        return {"seeded": 0, "skipped": 0}
+    client_kwargs, region = settings.http_client_kwargs("isp")
+    seeded = 0
+    skipped = 0
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        for entry in CUSTOMER_SEED_DATA:
+            customer_id = entry.get("customer_id")
+            try:
+                resp = await client.post("/customers", json=entry)
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "Failed to seed customer %s in region %s: %s",
+                    customer_id,
+                    region,
+                    exc,
+                )
+                continue
+            if resp.status_code == status.HTTP_201_CREATED:
+                seeded += 1
+            elif resp.status_code == status.HTTP_409_CONFLICT:
+                skipped += 1
+            else:
+                logger.warning(
+                    "Unexpected status seeding customer %s: %s %s",
+                    customer_id,
+                    resp.status_code,
+                    resp.text,
+                )
+    if seeded or skipped:
+        logger.info(
+            "Customer seed applied to ISP mock (region=%s): %s seeded, %s skipped",
+            region,
+            seeded,
+            skipped,
+        )
+    return {"seeded": seeded, "skipped": skipped}
+
+
+async def _ensure_customer_seed(settings: EnvConfig) -> None:
+    try:
+        await _seed_isp_customers(settings)
+    except Exception as exc:
+        logger.warning("Unable to ensure customer seed: %s", exc)
+
+
+def _filter_resolved_incidents(
+    lookback_days: int,
+    *,
+    customer_id: Optional[Any] = None,
+    kind: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    normalized_customer = _normalize_customer_id(customer_id)
+    results: List[Dict[str, Any]] = []
+    for incident in reversed(RESOLVED_INCIDENT_LOG):
+        resolved_at_raw = incident.get("resolved_at")
+        if not resolved_at_raw:
+            continue
+        resolved_at = _parse_iso8601(str(resolved_at_raw))
+        if resolved_at < since:
+            continue
+        if kind and incident.get("kind") != kind:
+            continue
+        if normalized_customer and _normalize_customer_id(incident.get("customer_id")) != normalized_customer:
+            continue
+        enriched = dict(incident)
+        enriched["resolved_at"] = resolved_at.isoformat()
+        original_ts = incident.get("timestamp")
+        if original_ts:
+            enriched["timestamp"] = _parse_iso8601(str(original_ts)).isoformat()
+        else:
+            enriched["timestamp"] = resolved_at.isoformat()
+        results.append(enriched)
+    return results
+
+
+def _build_resolved_incidents_frame(
+    ref_id: str, incidents: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    columns = [
+        {"text": "resolved_at", "type": "time"},
+        {"text": "kind", "type": "string"},
+        {"text": "customer_id", "type": "string"},
+        {"text": "action", "type": "string"},
+        {"text": "incident_at", "type": "time"},
+        {"text": "incident_id", "type": "string"},
+        {"text": "resolution_reason", "type": "string"},
+        {"text": "resolved_by", "type": "string"},
+        {"text": "context", "type": "string"},
+    ]
+    rows: List[List[Any]] = []
+    for incident in incidents:
+        resolved_at_str = incident.get("resolved_at")
+        incident_at_str = incident.get("timestamp")
+        kind_key = incident.get("kind") or ""
+        fallback_label = kind_key.replace("_", " ").strip().title() if kind_key else ""
+        kind_label = INCIDENT_KIND_LABELS.get(kind_key, fallback_label)
+        resolved_dt = _parse_iso8601(str(resolved_at_str)) if resolved_at_str else datetime.now(timezone.utc)
+        incident_dt = _parse_iso8601(str(incident_at_str)) if incident_at_str else resolved_dt
+        resolved_ms = int(resolved_dt.timestamp() * 1000)
+        incident_ms = int(incident_dt.timestamp() * 1000)
+        context_payload = {
+            key: value
+            for key, value in incident.items()
+            if key
+            not in {
+                "resolved_at",
+                "resolution_reason",
+                "resolved_by",
+                "kind",
+                "customer_id",
+                "action",
+                "timestamp",
+                "incident_id",
+            }
+        }
+        if kind_key:
+            context_payload["kind_key"] = kind_key
+        rows.append(
+            [
+                resolved_ms,
+                kind_label,
+                _normalize_customer_id(incident.get("customer_id")) or "",
+                incident.get("action") or "",
+                incident_ms,
+                incident.get("incident_id") or "",
+                incident.get("resolution_reason") or "",
+                incident.get("resolved_by") or "",
+                json.dumps(context_payload, separators=(",", ":"), ensure_ascii=True),
+            ]
+        )
+    return {
+        "refId": ref_id,
+        "type": "table",
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def resolve_incidents(
+    *,
+    customer_id: Optional[Any],
+    action: Optional[str] = None,
+    kinds: Optional[Iterable[str]] = None,
+    resolved_by: str = "system",
+    reason: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    if customer_id is None:
+        return []
+    normalized_customer = _normalize_customer_id(customer_id)
+    if not normalized_customer:
+        return []
+    kind_set = set(kinds) if kinds else None
+    now_iso = datetime.now(timezone.utc).isoformat()
+    remaining: deque[Dict[str, Any]] = deque(maxlen=INCIDENT_BUFFER_SIZE)
+    resolved_entries: List[Dict[str, Any]] = []
+    for entry in list(INCIDENT_LOG):
+        entry_customer = _normalize_customer_id(entry.get("customer_id"))
+        if entry_customer != normalized_customer:
+            remaining.append(entry)
+            continue
+        entry_action = entry.get("action")
+        if action and entry_action and entry_action != action:
+            remaining.append(entry)
+            continue
+        if kind_set and entry.get("kind") not in kind_set:
+            remaining.append(entry)
+            continue
+        resolved_entry = dict(entry)
+        if action and not resolved_entry.get("action"):
+            resolved_entry["action"] = action
+        resolved_entry["resolved_at"] = now_iso
+        resolved_entry["resolved_by"] = resolved_by
+        if reason:
+            resolved_entry["resolution_reason"] = reason
+        RESOLVED_INCIDENT_LOG.append(resolved_entry)
+        INCIDENT_RESOLVED_COUNTER.labels(kind=resolved_entry.get("kind")).inc()
+        resolved_entries.append(resolved_entry)
+    if resolved_entries:
+        INCIDENT_LOG.clear()
+        INCIDENT_LOG.extend(remaining)
+        INCIDENT_GAUGE.set(len(INCIDENT_LOG))
+    return resolved_entries
+
+
 def register_customer_event(
     event_type: Literal["alta", "baja"],
     *,
@@ -681,10 +925,12 @@ _seed_synthetic_customer_events()
 
 
 def record_incident(kind: str, detail: Dict[str, Any]) -> None:
+    detail_copy = dict(detail) if detail else {}
     entry = {
+        "incident_id": str(uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "kind": kind,
-        **detail,
+        **detail_copy,
     }
     INCIDENT_LOG.append(entry)
     INCIDENT_COUNTER.labels(kind=kind).inc()
@@ -865,6 +1111,7 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
             "invalid_coordinates",
             {
                 "customer_id": customer_id,
+                "action": action,
                 "lat": customer.get("lat"),
                 "lon": customer.get("lon"),
                 "reason": "non_numeric",
@@ -889,6 +1136,7 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
             "invalid_coordinates",
             {
                 "customer_id": customer_id,
+                "action": action,
                 "lat": lat,
                 "lon": lon,
                 "allowed_lat_range": CORDOBA_LAT_RANGE,
@@ -1004,6 +1252,11 @@ app = FastAPI(
     ),
     version="0.1.0",
 )
+
+
+@app.on_event("startup")
+async def seed_customers_on_startup() -> None:
+    await _ensure_customer_seed(SETTINGS)
 
 
 @app.middleware("http")
@@ -1222,6 +1475,18 @@ async def sync_customer(
                 feature_id = response.json()["id"]
                 SYNC_COUNTER.labels(result="created").inc()
                 result = {"feature_id": feature_id, "action": "created"}
+                resolved = resolve_incidents(
+                    customer_id=payload.customer_id,
+                    action="sync",
+                    resolved_by=user,
+                    reason="sync_created",
+                )
+                if resolved:
+                    logger.info(
+                        "Resolved incidents for customer %s during sync: %s",
+                        payload.customer_id,
+                        [entry.get("kind") for entry in resolved],
+                    )
                 record_audit(
                     AuditEntry(
                         action="sync",
@@ -1266,9 +1531,21 @@ async def sync_customer(
                     raise HTTPException(
                         status_code=update_resp.status_code,
                         detail={"upstream_detail": detail},
-                    )
+                )
                 SYNC_COUNTER.labels(result="updated").inc()
                 result = {"feature_id": feature_id, "action": "updated"}
+                resolved = resolve_incidents(
+                    customer_id=payload.customer_id,
+                    action="sync",
+                    resolved_by=user,
+                    reason="sync_updated",
+                )
+                if resolved:
+                    logger.info(
+                        "Resolved incidents for customer %s during sync: %s",
+                        payload.customer_id,
+                        [entry.get("kind") for entry in resolved],
+                    )
                 record_audit(
                     AuditEntry(
                         action="sync",
@@ -1414,6 +1691,30 @@ async def provision_onu(
                     "authorization": existing_onus[0],
                     "verification": current,
                 }
+                resolved_entries: List[Dict[str, Any]] = []
+                if payload.customer_id is not None:
+                    resolved_entries.extend(
+                        resolve_incidents(
+                            customer_id=payload.customer_id,
+                            action="provision",
+                            resolved_by=user,
+                            reason=result["status"],
+                        )
+                    )
+                    resolved_entries.extend(
+                        resolve_incidents(
+                            customer_id=payload.customer_id,
+                            kinds={"hardware_mismatch", "hardware_port_conflict"},
+                            resolved_by=user,
+                            reason=result["status"],
+                        )
+                    )
+                if resolved_entries:
+                    logger.info(
+                        "Resolved incidents for customer %s during provision: %s",
+                        payload.customer_id,
+                        [entry.get("kind") for entry in resolved_entries],
+                    )
                 record_audit(
                     AuditEntry(
                         action="provision",
@@ -1424,8 +1725,60 @@ async def provision_onu(
                         detail=result,
                         timestamp=timestamp,
                     )
-                )
+                    )
                 return result
+
+            # Validate that the requested PON slot is not already assigned to another ONU
+            port_conflict_onu: Optional[Dict[str, Any]] = None
+            try:
+                same_olt_onus = await fetch_json(
+                    client,
+                    "GET",
+                    "/onus",
+                    params={"olt_id": payload.olt_id},
+                    service="smartolt",
+                    settings=settings,
+                    region_name=smartolt_region,
+                )
+            except HTTPException as exc:
+                if exc.status_code not in {status.HTTP_404_NOT_FOUND, status.HTTP_204_NO_CONTENT}:
+                    raise
+                same_olt_onus = {"onus": []}
+
+            candidate_onus = same_olt_onus.get("onus", []) if isinstance(same_olt_onus, dict) else []
+            requested_sn = payload.onu_sn.lower()
+            for onu in candidate_onus:
+                if (
+                    onu.get("board") == payload.board
+                    and onu.get("pon_port") == payload.pon_port
+                    and str(onu.get("onu_sn", "")).lower() != requested_sn
+                ):
+                    port_conflict_onu = onu
+                    break
+
+            if port_conflict_onu:
+                record_incident(
+                    "hardware_port_conflict",
+                    {
+                        "customer_id": payload.customer_id,
+                        "olt_id": payload.olt_id,
+                        "board": payload.board,
+                        "pon_port": payload.pon_port,
+                        "requested_onu_sn": payload.onu_sn,
+                        "existing_onu_sn": port_conflict_onu.get("onu_sn"),
+                        "existing_onu_id": port_conflict_onu.get("onu_id"),
+                    },
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": "PON port already in use by another ONU",
+                        "olt_id": payload.olt_id,
+                        "board": payload.board,
+                        "pon_port": payload.pon_port,
+                        "existing_onu": port_conflict_onu,
+                    },
+                )
 
             auth_resp = await client.post("/onu/authorize", json=request_body)
             logger.info(
@@ -1456,6 +1809,30 @@ async def provision_onu(
                     "authorization": detail,
                     "verification": verification,
                 }
+                resolved_entries: List[Dict[str, Any]] = []
+                if payload.customer_id is not None:
+                    resolved_entries.extend(
+                        resolve_incidents(
+                            customer_id=payload.customer_id,
+                            action="provision",
+                            resolved_by=user,
+                            reason=result["status"],
+                        )
+                    )
+                    resolved_entries.extend(
+                        resolve_incidents(
+                            customer_id=payload.customer_id,
+                            kinds={"hardware_mismatch", "hardware_port_conflict"},
+                            resolved_by=user,
+                            reason=result["status"],
+                        )
+                    )
+                if resolved_entries:
+                    logger.info(
+                        "Resolved incidents for customer %s during provision: %s",
+                        payload.customer_id,
+                        [entry.get("kind") for entry in resolved_entries],
+                    )
                 record_audit(
                     AuditEntry(
                         action="provision",
@@ -1497,6 +1874,30 @@ async def provision_onu(
             "authorization": authorization,
             "verification": verification,
         }
+        resolved_entries: List[Dict[str, Any]] = []
+        if payload.customer_id is not None:
+            resolved_entries.extend(
+                resolve_incidents(
+                    customer_id=payload.customer_id,
+                    action="provision",
+                    resolved_by=user,
+                    reason=result["status"],
+                )
+            )
+            resolved_entries.extend(
+                resolve_incidents(
+                    customer_id=payload.customer_id,
+                    kinds={"hardware_mismatch", "hardware_port_conflict"},
+                    resolved_by=user,
+                    reason=result["status"],
+                )
+            )
+        if resolved_entries:
+            logger.info(
+                "Resolved incidents for customer %s during provision: %s",
+                payload.customer_id,
+                [entry.get("kind") for entry in resolved_entries],
+            )
         record_audit(
             AuditEntry(
                 action="provision",
@@ -1618,13 +2019,7 @@ async def decommission_customer(
                         raise
                     feature = None
 
-        if feature is None:
-            record_incident(
-                "decommission_missing_feature",
-                {
-                    "customer_id": payload.customer_id,
-                },
-            )
+        feature_missing = feature is None
 
         smartolt_client_kwargs, smartolt_region = settings.http_client_kwargs("smartolt")
         async with httpx.AsyncClient(**smartolt_client_kwargs) as smart_client:
@@ -1643,22 +2038,18 @@ async def decommission_customer(
             )
             existing_onus = onus_data.get("onus", []) if isinstance(onus_data, dict) else []
 
-        if not existing_onus:
-            record_incident(
-                "decommission_missing_onu",
-                {"customer_id": payload.customer_id, "onu_sn": customer["onu_sn"]},
-            )
+        onu_missing = not existing_onus
 
         if dry_run_flag:
             DECOMMISSION_COUNTER.labels(result="dry_run").inc()
             result = {
                 "dry_run": True,
                 "feature": {
-                    "found": feature is not None,
+                    "found": not feature_missing,
                     "feature_id": feature["id"] if feature else None,
                 },
                 "onu": {
-                    "found": bool(existing_onus),
+                    "found": not onu_missing,
                     "onu_ids": [onu["onu_id"] for onu in existing_onus],
                 },
             }
@@ -1675,7 +2066,7 @@ async def decommission_customer(
             )
             return result
 
-        geogrid_result = "not_found"
+        geogrid_result = "already_absent" if feature_missing else "not_found"
         if feature:
             geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
             async with httpx.AsyncClient(**geogrid_client_kwargs) as geogrid_client:
@@ -1724,8 +2115,10 @@ async def decommission_customer(
                     raise HTTPException(
                         status_code=delete_resp.status_code,
                         detail={"upstream_detail": detail},
-                    )
+                )
                 smartolt_result = "deleted"
+        else:
+            smartolt_result = "already_absent"
 
         DECOMMISSION_COUNTER.labels(result="completed").inc()
         result = {
@@ -1733,6 +2126,33 @@ async def decommission_customer(
             "feature": {"status": geogrid_result},
             "onu": {"status": smartolt_result},
         }
+        resolved_entries: List[Dict[str, Any]] = []
+        resolved_entries.extend(
+            resolve_incidents(
+                customer_id=payload.customer_id,
+                action="decommission",
+                resolved_by=user,
+                reason="decommission_completed",
+            )
+        )
+        resolved_entries.extend(
+            resolve_incidents(
+                customer_id=payload.customer_id,
+                kinds={
+                    "decommission_missing_feature",
+                    "decommission_missing_onu",
+                    "decommission_status_active",
+                },
+                resolved_by=user,
+                reason="decommission_completed",
+            )
+        )
+        if resolved_entries:
+            logger.info(
+                "Resolved incidents for customer %s during decommission: %s",
+                payload.customer_id,
+                [entry.get("kind") for entry in resolved_entries],
+            )
         record_audit(
             AuditEntry(
                 action="decommission",
@@ -1903,9 +2323,11 @@ async def reset_mocks(settings: EnvConfig = Depends(get_settings)) -> Dict[str, 
                     "region": region,
                 }
     INCIDENT_LOG.clear()
+    RESOLVED_INCIDENT_LOG.clear()
     AUDIT_LOG.clear()
     INCIDENT_GAUGE.set(0)
     CUSTOMER_EVENTS.clear()
+    await _ensure_customer_seed(settings)
     return results
 
 
@@ -2244,6 +2666,15 @@ async def grafana_query(request: Request) -> List[Dict[str, Any]]:
             events = _filter_customer_events(lookback_days, zone=zone_filter, event_type=event_type)
             resolved_events = [_event_with_resolved_coordinates(event) for event in events]
             responses.append(_build_events_table_frame(ref_id, resolved_events))
+        elif target_name == "incidents_resolved":
+            customer_filter = target_payload.get("customer_id")
+            kind_filter = target_payload.get("kind")
+            incidents = _filter_resolved_incidents(
+                lookback_days,
+                customer_id=customer_filter,
+                kind=kind_filter,
+            )
+            responses.append(_build_resolved_incidents_frame(ref_id, incidents))
         else:
             responses.append(_build_empty_table_frame(ref_id))
     return responses
@@ -2255,6 +2686,19 @@ async def list_incidents(kind: Optional[str] = Query(default=None)) -> List[Dict
     if kind:
         entries = [entry for entry in entries if entry["kind"] == kind]
     return entries
+
+
+@app.get("/incidents/resolved")
+async def list_resolved_incidents(
+    lookback_days: int = Query(default=30, ge=1, le=365),
+    kind: Optional[str] = Query(default=None),
+    customer_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> List[Dict[str, Any]]:
+    entries = _filter_resolved_incidents(
+        lookback_days, customer_id=customer_id, kind=kind
+    )
+    return entries[:limit]
 
 
 @app.get("/audits")

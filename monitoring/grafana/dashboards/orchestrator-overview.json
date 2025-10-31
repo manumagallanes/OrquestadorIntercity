@@ -23,12 +23,12 @@
   "links": [],
   "liveNow": false,
   "panels": [
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
+  {
+    "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+    },
+    "fieldConfig": {
         "defaults": {
           "decimals": 0,
           "displayName": "Altas",
@@ -360,6 +360,12 @@
                       "hardware_mismatch": {
                         "text": "Desajuste hardware/OLT"
                       },
+                      "hardware_port_conflict": {
+                        "text": "Puerto PON ocupado"
+                      },
+                      "decommission_status_active": {
+                        "text": "Cliente activo al solicitar baja"
+                      },
                       "geogrid_conflict": {
                         "text": "Conflicto GeoGrid"
                       },
@@ -464,18 +470,191 @@
       },
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "resolved_at"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Resuelto"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kind"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tipo"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "customer_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cliente"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "action"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Flujo"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "incident_at"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Incidente original"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "incident_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Incident ID"
+              },
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "resolution_reason"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Motivo resolución"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "resolved_by"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Resuelto por"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "context"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Detalle"
+              },
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 9,
+      "options": {
+        "footer": {
+          "enablePagination": true,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ]
+        },
+        "pageSize": 10,
+        "showHeader": true,
+        "showSearch": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Resuelto"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
+          },
+          "editorMode": "code",
+          "payload": {
+            "lookback_days": 30
+          },
+          "refId": "A",
+          "target": "incidents_resolved"
+        }
+      ],
+      "title": "Incidentes resueltos",
+      "transformations": [],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "simpod-json-datasource",
+        "uid": "orchestrator-analytics"
+      },
+      "fieldConfig": {
+        "defaults": {
           "color": {
             "mode": "palette-classic"
           }
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 14
-      },
+    "gridPos": {
+      "h": 9,
+      "w": 24,
+      "x": 0,
+      "y": 21
+    },
       "id": 8,
       "options": {
       "basemap": {

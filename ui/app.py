@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Any, Dict, Optional, Tuple
 
@@ -148,17 +149,19 @@ def incidents_section() -> None:
     st.subheader("4. Incidentes registrados")
     col1, col2 = st.columns([1, 4])
     with col1:
+        known_kinds = [
+            "missing_fields",
+            "integration_disabled",
+            "invalid_coordinates",
+            "hardware_mismatch",
+            "hardware_port_conflict",
+            "decommission_status_active",
+            "decommission_missing_feature",
+            "decommission_missing_onu",
+        ]
         kind_filter = st.selectbox(
             "Filtrar por tipo",
-            options=[
-                "Todos",
-                "missing_fields",
-                "integration_disabled",
-                "hardware_mismatch",
-                "decommission_status_active",
-                "decommission_missing_feature",
-                "decommission_missing_onu",
-            ],
+            options=["Todos"] + sorted(known_kinds),
         )
         refresh = st.button("Actualizar incidentes")
     if refresh:
@@ -312,6 +315,306 @@ def isp_controls_section() -> None:
                             "POST", "/customers", service="isp", json=payload
                         )
                         display_response(success, status_code, data)
+        with st.expander("Editar cliente existente"):
+            def _reset_edit_customer_form_state() -> None:
+                keys_to_clear = [
+                    key
+                    for key in list(st.session_state.keys())
+                    if key.startswith("edit_toggle_") or key.startswith("edit_input_")
+                ]
+                for key in keys_to_clear:
+                    st.session_state.pop(key, None)
+
+            edit_container = st.container()
+            if "edit_customer_cache" not in st.session_state:
+                st.session_state["edit_customer_cache"] = None
+            with edit_container:
+                load_col, toggle_col, input_col = st.columns([1, 1, 2])
+                with load_col:
+                    edit_id = st.number_input(
+                        "customer_id a editar",
+                        min_value=1,
+                        step=1,
+                        value=202,
+                        key="edit_customer_id",
+                    )
+                    if st.button("Cargar datos", key="load_customer_button"):
+                        success, status_code, data = call_api(
+                            "GET",
+                            f"/customers/{int(edit_id)}",
+                            service="isp",
+                        )
+                        if success:
+                            st.session_state["edit_customer_cache"] = data
+                            _reset_edit_customer_form_state()
+                            st.success("Cliente cargado correctamente.")
+                        else:
+                            display_response(success, status_code, data)
+                cached = st.session_state.get("edit_customer_cache") or {}
+                if not cached:
+                    with toggle_col:
+                        st.info("Carga un cliente para habilitar la edición.")
+                    with input_col:
+                        if st.button("Guardar cambios", key="disabled_save_button"):
+                            st.warning("No hay cliente cargado.")
+                else:
+                    original = dict(cached)
+                    editable_fields = [
+                        {
+                            "key": "name",
+                            "toggle_label": "Modificar nombre",
+                            "input_label": "Nuevo nombre",
+                            "type": "text",
+                        },
+                        {
+                            "key": "address",
+                            "toggle_label": "Modificar dirección",
+                            "input_label": "Nueva dirección",
+                            "type": "text",
+                        },
+                        {
+                            "key": "city",
+                            "toggle_label": "Modificar ciudad",
+                            "input_label": "Nueva ciudad",
+                            "type": "text",
+                        },
+                        {
+                            "key": "zone",
+                            "toggle_label": "Modificar zona/barrio",
+                            "input_label": "Nueva zona/barrio",
+                            "type": "text",
+                        },
+                        {
+                            "key": "lat",
+                            "toggle_label": "Modificar latitud",
+                            "input_label": "Nueva latitud",
+                            "type": "float_optional",
+                        },
+                        {
+                            "key": "lon",
+                            "toggle_label": "Modificar longitud",
+                            "input_label": "Nueva longitud",
+                            "type": "float_optional",
+                        },
+                        {
+                            "key": "odb",
+                            "toggle_label": "Modificar ODB",
+                            "input_label": "Nueva ODB",
+                            "type": "text_free",
+                        },
+                        {
+                            "key": "olt_id",
+                            "toggle_label": "Modificar OLT ID",
+                            "input_label": "OLT ID",
+                            "type": "int",
+                        },
+                        {
+                            "key": "board",
+                            "toggle_label": "Modificar board",
+                            "input_label": "Board",
+                            "type": "int",
+                        },
+                        {
+                            "key": "pon",
+                            "toggle_label": "Modificar puerto PON",
+                            "input_label": "Puerto PON",
+                            "type": "int",
+                        },
+                        {
+                            "key": "onu_sn",
+                            "toggle_label": "Modificar ONU SN",
+                            "input_label": "Nuevo ONU SN",
+                            "type": "text_free",
+                        },
+                        {
+                            "key": "integration_enabled",
+                            "toggle_label": "Modificar integration_enabled",
+                            "input_label": "integration_enabled",
+                            "type": "bool",
+                        },
+                        {
+                            "key": "status",
+                            "toggle_label": "Modificar estado",
+                            "input_label": "Estado",
+                            "type": "select",
+                            "options": ["active", "inactive"],
+                        },
+                    ]
+
+                    with toggle_col:
+                        st.markdown(
+                            "Seleccioná los datos a actualizar y completá los nuevos valores:"
+                        )
+                        toggle_states: Dict[str, bool] = {}
+                        for field in editable_fields:
+                            toggle_key = f"edit_toggle_{field['key']}"
+                            toggled = st.checkbox(
+                                field["toggle_label"],
+                                key=toggle_key,
+                            )
+                            toggle_states[field["key"]] = toggled
+                            if not toggled:
+                                st.session_state.pop(
+                                    f"edit_input_{field['key']}", None
+                                )
+
+                    active_fields = [
+                        field
+                        for field in editable_fields
+                        if toggle_states.get(field["key"])
+                    ]
+
+                    with input_col:
+                        st.caption("Valores actuales")
+                        st.json(cached)
+
+                        if active_fields:
+                            for field in active_fields:
+                                input_key = f"edit_input_{field['key']}"
+                                if input_key not in st.session_state:
+                                    if field["type"] in {"text", "text_free"}:
+                                        st.session_state[input_key] = str(
+                                            original.get(field["key"], "") or ""
+                                        )
+                                    elif field["type"] == "float_optional":
+                                        current_val = original.get(field["key"])
+                                        st.session_state[input_key] = (
+                                            ""
+                                            if current_val is None
+                                            else str(current_val)
+                                        )
+                                    elif field["type"] == "int":
+                                        current_val = original.get(field["key"])
+                                        st.session_state[input_key] = (
+                                            ""
+                                            if current_val is None
+                                            else str(current_val)
+                                        )
+                                    elif field["type"] == "bool":
+                                        st.session_state[input_key] = bool(
+                                            original.get(field["key"], False)
+                                        )
+                                    elif field["type"] == "select":
+                                        options = field.get("options", [])
+                                        current_val = original.get(field["key"])
+                                        if current_val in options:
+                                            st.session_state[input_key] = current_val
+                                        elif options:
+                                            st.session_state[input_key] = options[0]
+
+                                if field["type"] in {"text", "text_free"}:
+                                    st.text_input(
+                                        field["input_label"],
+                                        key=f"edit_input_{field['key']}",
+                                    )
+                                elif field["type"] == "float_optional":
+                                    st.text_input(
+                                        field["input_label"],
+                                        key=f"edit_input_{field['key']}",
+                                    )
+                                elif field["type"] == "int":
+                                    st.text_input(
+                                        field["input_label"],
+                                        key=f"edit_input_{field['key']}",
+                                    )
+                                elif field["type"] == "bool":
+                                    st.checkbox(
+                                        field["input_label"],
+                                        key=f"edit_input_{field['key']}",
+                                    )
+                                elif field["type"] == "select":
+                                    options = field.get("options", [])
+                                    if options:
+                                        st.selectbox(
+                                            field["input_label"],
+                                            options=options,
+                                            key=f"edit_input_{field['key']}",
+                                        )
+                        else:
+                            st.info("Seleccioná al menos un campo para editar.")
+
+                        if st.button("Guardar cambios", key="edit_save_button"):
+                            if not active_fields:
+                                st.warning(
+                                    "Marcá al menos una casilla antes de guardar."
+                                )
+                            else:
+                                payload = dict(original)
+                                has_error = False
+
+                                for field in active_fields:
+                                    field_type = field["type"]
+                                    input_key = f"edit_input_{field['key']}"
+                                    raw_value = st.session_state.get(input_key)
+
+                                    if field_type == "text":
+                                        cleaned = (raw_value or "").strip()
+                                        if field["key"] == "zone" and not cleaned:
+                                            st.error(
+                                                "La zona/barrio es obligatoria para actualizar el cliente."
+                                            )
+                                            has_error = True
+                                            break
+                                        if field["key"] in {
+                                            "name",
+                                            "address",
+                                            "city",
+                                        }:
+                                            payload[field["key"]] = (
+                                                cleaned
+                                                or original.get(field["key"], "")
+                                            )
+                                        else:
+                                            payload[field["key"]] = cleaned
+                                    elif field_type == "text_free":
+                                        payload[field["key"]] = (raw_value or "").strip()
+                                    elif field_type == "float_optional":
+                                        text_value = (raw_value or "").strip()
+                                        if not text_value:
+                                            payload[field["key"]] = None
+                                        else:
+                                            try:
+                                                payload[field["key"]] = float(text_value)
+                                            except ValueError:
+                                                st.error(
+                                                    f"Valor inválido para {field['input_label']}."
+                                                )
+                                                has_error = True
+                                                break
+                                    elif field_type == "int":
+                                        text_value = (raw_value or "").strip()
+                                        try:
+                                            payload[field["key"]] = int(text_value)
+                                        except (ValueError, TypeError):
+                                            st.error(
+                                                f"Valor inválido para {field['input_label']}."
+                                            )
+                                            has_error = True
+                                            break
+                                    elif field_type == "bool":
+                                        payload[field["key"]] = bool(raw_value)
+                                    elif field_type == "select":
+                                        payload[field["key"]] = raw_value
+
+                                if has_error:
+                                    st.stop()
+
+                                payload["customer_id"] = int(
+                                    st.session_state.get(
+                                        "edit_customer_id",
+                                        original.get("customer_id", edit_id),
+                                    )
+                                )
+
+                                success, status_code, data = call_api(
+                                    "PUT",
+                                    f"/customers/{payload['customer_id']}",
+                                    service="isp",
+                                    json=payload,
+                                )
+                                display_response(success, status_code, data)
+                                if success:
+                                    st.session_state["edit_customer_cache"] = payload
 
 
 def config_section() -> None:
