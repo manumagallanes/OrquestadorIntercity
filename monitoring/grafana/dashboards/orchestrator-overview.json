@@ -23,12 +23,27 @@
   "links": [],
   "liveNow": false,
   "panels": [
-  {
-    "datasource": {
-      "type": "prometheus",
-      "uid": "prometheus"
+    {
+      "id": 10,
+      "type": "text",
+      "title": "C\u00f3mo leer este tablero",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Monitoreo del Orquestador\n- Ajust\u00e1 la **zona** y la **ventana de d\u00edas** con los filtros superiores.\n- Los contadores muestran acumulados filtrados por zona; las gr\u00e1ficas usan la ventana de tiempo del dashboard.\n- Revis\u00e1 la tabla de incidentes activos para priorizar y la de resueltos para validar correcciones.\n- El mapa ubica altas (verde) y bajas (rojo) usando las coordenadas validadas por el orquestador."
+      }
     },
-    "fieldConfig": {
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
         "defaults": {
           "decimals": 0,
           "displayName": "Altas",
@@ -55,17 +70,17 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 8,
         "x": 0,
-        "y": 0
+        "y": 3
       },
       "id": 1,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
-        "orientation": "horizontal",
+        "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -83,14 +98,15 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\"})",
           "interval": "",
           "legendFormat": "Altas acumuladas",
           "refId": "A"
         }
       ],
       "title": "Altas acumuladas",
-      "type": "stat"
+      "type": "stat",
+      "description": "Altas acumuladas en ISP filtradas por la zona seleccionada."
     },
     {
       "datasource": {
@@ -124,17 +140,17 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 8,
         "x": 8,
-        "y": 0
+        "y": 3
       },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
-        "orientation": "horizontal",
+        "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -152,13 +168,14 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"baja\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\"})",
           "legendFormat": "Bajas acumuladas",
           "refId": "A"
         }
       ],
       "title": "Bajas acumuladas",
-      "type": "stat"
+      "type": "stat",
+      "description": "Bajas acumuladas en ISP filtradas por la zona seleccionada."
     },
     {
       "datasource": {
@@ -192,17 +209,17 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 8,
         "x": 16,
-        "y": 0
+        "y": 3
       },
       "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "auto",
-        "orientation": "horizontal",
+        "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -220,13 +237,126 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\"}) - sum(orchestrator_customer_events_total{event_type=\"baja\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\"}) - sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\"})",
           "legendFormat": "Neto acumulado",
           "refId": "A"
         }
       ],
       "title": "Crecimiento neto acumulado",
-      "type": "stat"
+      "type": "stat",
+      "description": "Crecimiento neto acumulado (altas - bajas) para la zona filtrada."
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Altas vs bajas (tasa)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "pointSize": 4,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (event_type) (increase(orchestrator_customer_events_total{zone=~\"${zone:regex}\"}[$__rate_interval]))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Incidentes detectados por tipo",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "pointSize": 4,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (kind) (increase(orchestrator_incidents_total[$__rate_interval]))",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ]
     },
     {
       "datasource": {
@@ -261,10 +391,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
+        "h": 4,
+        "w": 8,
         "x": 0,
-        "y": 5
+        "y": 15
       },
       "id": 6,
       "options": {
@@ -292,7 +422,140 @@
         }
       ],
       "title": "Incidentes retenidos",
-      "type": "gauge"
+      "type": "gauge",
+      "description": "Cantidad de incidentes todav\u00eda abiertos en el orquestador."
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Incidentes resueltos en el rango",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "displayName": "Resueltos",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 15
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(orchestrator_incidents_resolved_total[$__range]))",
+          "legendFormat": "resueltos",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Incidentes nuevos en el rango",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "displayName": "Nuevos",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(orchestrator_incidents_total[$__range]))",
+          "legendFormat": "nuevos",
+          "refId": "A"
+        }
+      ]
     },
     {
       "datasource": {
@@ -323,7 +586,7 @@
           },
           "unit": "short",
           "custom": {
-            "align": "center"
+            "align": "left"
           }
         },
         "overrides": [
@@ -343,7 +606,7 @@
               },
               {
                 "id": "displayName",
-                "value": "Categoría"
+                "value": "Categor\u00eda"
               },
               {
                 "id": "mappings",
@@ -352,7 +615,7 @@
                     "type": "value",
                     "options": {
                       "invalid_coordinates": {
-                        "text": "Coordenadas inválidas"
+                        "text": "Coordenadas inv\u00e1lidas"
                       },
                       "missing_fields": {
                         "text": "Datos incompletos"
@@ -398,20 +661,18 @@
         ]
       },
       "gridPos": {
-        "h": 9,
-        "w": 18,
-        "x": 6,
-        "y": 5
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
       },
       "id": 7,
       "options": {
         "showHeader": true,
         "footer": {
-          "enablePagination": true,
+          "enablePagination": false,
           "fields": "",
-          "reducer": [
-            "sum"
-          ]
+          "reducer": []
         }
       },
       "targets": [
@@ -421,7 +682,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (kind) (orchestrator_incidents_total)",
+          "expr": "sum(increase(orchestrator_incidents_total[$__range])) by (kind)",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -443,7 +704,7 @@
               "Time": true
             },
             "renameByName": {
-              "Value": "Total",
+              "Value": "Nuevos",
               "kind": "Tipo"
             }
           }
@@ -454,14 +715,15 @@
             "fields": {},
             "sort": [
               {
-                "field": "Total",
+                "field": "Nuevos",
                 "desc": true
               }
             ]
           }
         }
       ],
-      "type": "table"
+      "type": "table",
+      "description": "Incidentes detectados en la ventana de tiempo seleccionada, agrupados por tipo."
     },
     {
       "datasource": {
@@ -559,7 +821,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Motivo resolución"
+                "value": "Motivo resoluci\u00f3n"
               }
             ]
           },
@@ -587,17 +849,17 @@
               },
               {
                 "id": "custom.width",
-                "value": 220
+                "value": 260
               }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 14
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 19
       },
       "id": 9,
       "options": {
@@ -608,7 +870,7 @@
             "sum"
           ]
         },
-        "pageSize": 10,
+        "pageSize": 15,
         "showHeader": true,
         "showSearch": true,
         "sortBy": [
@@ -626,7 +888,7 @@
           },
           "editorMode": "code",
           "payload": {
-            "lookback_days": 30
+            "lookback_days": "$lookback_days"
           },
           "refId": "A",
           "target": "incidents_resolved"
@@ -634,7 +896,8 @@
       ],
       "title": "Incidentes resueltos",
       "transformations": [],
-      "type": "table"
+      "type": "table",
+      "description": "Detalle de incidentes corregidos dentro de la ventana de d\u00edas configurada."
     },
     {
       "datasource": {
@@ -649,102 +912,108 @@
         },
         "overrides": []
       },
-    "gridPos": {
-      "h": 9,
-      "w": 24,
-      "x": 0,
-      "y": 21
-    },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
       "id": 8,
       "options": {
-      "basemap": {
-        "type": "carto",
-        "config": {
-          "style": "positron"
-        }
-      },
-      "controls": {
-        "showZoom": true,
-        "showAttribution": true,
-        "mouseWheelZoom": true
-      },
-      "layers": [
-        {
-          "type": "markers",
-          "name": "Altas",
+        "basemap": {
+          "type": "carto",
           "config": {
-            "color": "#2ecc71",
-            "size": 8,
-            "showLegend": true
-          },
-          "data": {
-            "format": "table",
-            "source": "A",
-            "mapping": {
-              "latitude": "lat",
-              "longitude": "lon",
-              "name": "zone",
-              "time": "timestamp"
-            }
+            "style": "positron"
           }
         },
-        {
-          "type": "markers",
-          "name": "Bajas",
-          "config": {
-            "color": "#e74c3c",
-            "size": 8,
-            "showLegend": true
+        "controls": {
+          "showZoom": true,
+          "showAttribution": true,
+          "mouseWheelZoom": true
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Altas",
+            "config": {
+              "color": "#2ecc71",
+              "size": 8,
+              "showLegend": true
+            },
+            "data": {
+              "format": "table",
+              "source": "A",
+              "mapping": {
+                "latitude": "lat",
+                "longitude": "lon",
+                "name": "zone",
+                "time": "timestamp"
+              }
+            }
           },
-          "data": {
-            "format": "table",
-            "source": "B",
-            "mapping": {
-              "latitude": "lat",
-              "longitude": "lon",
-              "name": "zone",
-              "time": "timestamp"
+          {
+            "type": "markers",
+            "name": "Bajas",
+            "config": {
+              "color": "#e74c3c",
+              "size": 8,
+              "showLegend": true
+            },
+            "data": {
+              "format": "table",
+              "source": "B",
+              "mapping": {
+                "latitude": "lat",
+                "longitude": "lon",
+                "name": "zone",
+                "time": "timestamp"
+              }
             }
           }
+        ],
+        "view": {
+          "lat": -33.12,
+          "lon": -64.35,
+          "lng": -64.35,
+          "zoom": 11,
+          "center": {
+            "lat": -33.12,
+            "lon": -64.35
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
+          },
+          "editorMode": "code",
+          "payload": {
+            "event_type": "alta",
+            "lookback_days": "$lookback_days"
+          },
+          "refId": "A",
+          "target": "customer_events_map"
+        },
+        {
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
+          },
+          "editorMode": "code",
+          "payload": {
+            "event_type": "baja",
+            "lookback_days": "$lookback_days"
+          },
+          "refId": "B",
+          "target": "customer_events_map"
         }
       ],
-      "view": {
-        "lat": -31.42,
-          "lon": -64.18,
-          "zoom": 11
-        }
-    },
-    "targets": [
-      {
-        "datasource": {
-          "type": "simpod-json-datasource",
-          "uid": "orchestrator-analytics"
-        },
-        "editorMode": "code",
-        "payload": {
-          "event_type": "alta",
-          "lookback_days": 30
-        },
-        "refId": "A",
-        "target": "customer_events_map"
-      },
-      {
-        "datasource": {
-          "type": "simpod-json-datasource",
-          "uid": "orchestrator-analytics"
-        },
-        "editorMode": "code",
-        "payload": {
-          "event_type": "baja",
-          "lookback_days": 30
-        },
-        "refId": "B",
-        "target": "customer_events_map"
-      }
-    ],
-    "title": "Altas y bajas georreferenciadas",
-    "transformations": [],
-    "type": "geomap"
+      "title": "Altas y bajas georreferenciadas",
+      "transformations": [],
+      "type": "geomap",
+      "description": "Distribuci\u00f3n geogr\u00e1fica de altas (verde) y bajas (rojo) en el periodo seleccionado."
     }
   ],
   "refresh": "30s",
@@ -755,7 +1024,60 @@
     "intercity"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "zone",
+        "label": "Zona",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(orchestrator_customer_events_total, zone)",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "Todas",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "lookback_days",
+        "label": "Ventana (d\u00edas)",
+        "type": "custom",
+        "query": "1,7,30,90",
+        "options": [
+          {
+            "text": "1",
+            "value": "1",
+            "selected": false
+          },
+          {
+            "text": "7",
+            "value": "7",
+            "selected": false
+          },
+          {
+            "text": "30",
+            "value": "30",
+            "selected": true
+          },
+          {
+            "text": "90",
+            "value": "90",
+            "selected": false
+          }
+        ],
+        "current": {
+          "selected": true,
+          "text": "30",
+          "value": "30"
+        }
+      }
+    ]
   },
   "time": {
     "from": "now-7d",
@@ -784,6 +1106,6 @@
   "timezone": "browser",
   "title": "Monitoreo Orquestador Intercity",
   "uid": "orchestrator-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
