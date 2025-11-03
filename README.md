@@ -292,7 +292,60 @@ La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas
 
 ---
 
-## 11. Extensión y mantenimiento
+## 11. Runbook operativo
+
+### 11.1 Incidentes de hardware (`hardware_mismatch`, `hardware_port_conflict`)
+
+1. **Identificación**  
+   - Revisar el panel “Incidentes abiertos” en Grafana o `GET /incidents?kind=hardware_port_conflict`.  
+   - Capturar `customer_id`, `olt_id`, `board`, `pon_port`, `requested_onu_sn` y el mensaje detallado.
+2. **Análisis**  
+   - Para `hardware_mismatch`: comparar la información de ISP-Cube con el hardware real y corregir la discrepancia.  
+   - Para `hardware_port_conflict`: liberar el puerto en SmartOLT (o ajustar el cliente original) antes de reintentar.
+3. **Remediación**  
+   - Actualizar datos en los sistemas necesarios.  
+   - Reintentar el proceso de provisión o baja y corroborar el éxito.
+4. **Cierre**  
+   - Verificar que `GET /incidents` ya no muestre el caso y que `GET /incidents/resolved` indique la resolución con `resolved_by` y `resolution_reason`.
+
+### 11.2 Reset de mocks y servicios
+
+1. `POST /reset` sobre el orquestador: limpia incidentes, auditorías, eventos y reinicia los mocks.  
+2. `docker compose restart` para reinicios suaves o `docker compose down && docker compose up -d` tras cambios de configuración.  
+3. Confirmar salud con `GET /health` de cada mock y `GET /config` para revisar `dry_run` y endpoints activos.
+
+### 11.3 Responsabilidades
+
+- **Operaciones**: monitoreo de dashboards, ejecución de runbooks y escalado.  
+- **Ingeniería**: mantenimiento del código, evolución de reglas y soporte de alertas.  
+- **Infraestructura**: cuidado del stack de observabilidad (Prometheus, Grafana, Alertmanager) y backups de `data/state.db`.
+
+---
+
+## 12. Checklist operativo
+
+### 12.1 Revisión diaria
+
+- [ ] Dashboards sin alertas *firing* en Prometheus/Grafana.  
+- [ ] `GET /incidents` vacío o con casos documentados en curso.  
+- [ ] Eventos recientes visibles en el mapa y auditorías registradas en `/audits`.  
+- [ ] Verificar respaldo/espacio disponible del archivo `data/state.db` (o el path configurado).
+
+### 12.2 Pre despliegue
+
+- [ ] Ejecutar smoke tests (`scripts/smoke.sh` o pipeline).  
+- [ ] Respaldar dashboards personalizados y la base de estado.  
+- [ ] Notificar ventana de cambio a Operaciones y chequear que no existan incidentes críticos abiertos.
+
+### 12.3 Post despliegue
+
+- [ ] Validar `/metrics`, `/health` y paneles principales.  
+- [ ] Confirmar que auditorías, eventos y mapa registran las nuevas operaciones.  
+- [ ] Documentar hallazgos en el runbook si se aplicaron pasos adicionales.
+
+---
+
+## 13. Extensión y mantenimiento
 
 - **Entornos reales**: ajustar los JSON en `config/environments`, definir secretos mediante variables de entorno y habilitar `verify_tls`.
 - **Persistencia**: si se requiere histórico más allá de la memoria del proceso, adaptar `record_audit` y `record_incident` para almacenar registros en una base de datos externa.
@@ -302,7 +355,7 @@ La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas
 
 ---
 
-## 12. Recursos complementarios
+## 14. Recursos complementarios
 
 - `diagrama.mmd`: descripción visual de la arquitectura.
 - `mocks/`: implementación detallada de las APIs simuladas.
