@@ -39,14 +39,43 @@ class SmartOLTStore:
 
     def authorize(self, payload: AuthorizeRequest) -> ONU:
         key = self._make_key(payload)
-        if key in self._onus:
-            existing = self._onus[key]
-            logger.info("ONU already authorized: %s", existing.onu_id)
+        # Detect conflicts on the same physical port regardless of serial number
+        port_conflict = next(
+            (
+                onu
+                for onu in self._onus.values()
+                if onu.olt_id == payload.olt_id
+                and onu.board == payload.board
+                and onu.pon_port == payload.pon_port
+            ),
+            None,
+        )
+        if port_conflict:
+            if port_conflict.onu_sn.lower() == payload.onu_sn.lower():
+                logger.info("ONU already authorized: %s", port_conflict.onu_id)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": "ONU already authorized",
+                        "onu_id": port_conflict.onu_id,
+                    },
+                )
+            logger.info(
+                "Port conflict detected for OLT %s board %s pon %s (existing onu_id=%s)",
+                payload.olt_id,
+                payload.board,
+                payload.pon_port,
+                port_conflict.onu_id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "message": "ONU already authorized",
-                    "onu_id": existing.onu_id,
+                    "message": "PON port already in use",
+                    "existing_onu_id": port_conflict.onu_id,
+                    "existing_onu_sn": port_conflict.onu_sn,
+                    "olt_id": payload.olt_id,
+                    "board": payload.board,
+                    "pon_port": payload.pon_port,
                 },
             )
 

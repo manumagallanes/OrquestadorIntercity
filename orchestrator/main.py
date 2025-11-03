@@ -5,11 +5,11 @@ import math
 import os
 import random
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
 
 from typing_extensions import Literal
@@ -476,6 +476,7 @@ ZONE_BASE_COORDINATES: Dict[str, Tuple[float, float]] = {
 DEFAULT_ZONE_LABEL = "Sin zona"
 CUSTOMER_EVENT_BUFFER_SIZE = int(os.getenv("CUSTOMER_EVENT_BUFFER_SIZE", "2000"))
 CUSTOMER_EVENTS: deque[Dict[str, Any]] = deque(maxlen=CUSTOMER_EVENT_BUFFER_SIZE)
+LATEST_CUSTOMER_EVENTS: OrderedDict[Any, Dict[str, Any]] = OrderedDict()
 SYNTHETIC_EVENT_ZONES: List[str] = [
     "Centro",
     "Nueva Córdoba",
@@ -553,6 +554,25 @@ def _format_customer_label(
     if len(parts) == 1:
         return parts[0]
     return " – ".join(parts)
+
+
+def _ensure_latest_events_cache() -> None:
+    if LATEST_CUSTOMER_EVENTS:
+        return
+    if not CUSTOMER_EVENTS:
+        return
+    for event in CUSTOMER_EVENTS:
+        key = _normalize_customer_id(event.get("customer_id"))
+        if key is None:
+            key = event.get("event_id")
+        if key is None:
+            continue
+        # Preserve recency by removing before re-adding
+        if key in LATEST_CUSTOMER_EVENTS:
+            del LATEST_CUSTOMER_EVENTS[key]
+        LATEST_CUSTOMER_EVENTS[key] = dict(event)
+        while len(LATEST_CUSTOMER_EVENTS) > CUSTOMER_EVENT_BUFFER_SIZE:
+            LATEST_CUSTOMER_EVENTS.popitem(last=False)
 
 
 def _event_with_resolved_coordinates(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -992,23 +1012,37 @@ def register_customer_event(
     source: str = "runtime",
     metadata: Optional[Dict[str, Any]] = None,
     customer_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
-    safe_zone = zone or (customer.get("zone") if customer else None) or DEFAULT_ZONE_LABEL
-    safe_city = city or (customer.get("city") if customer else None)
+) -> Dict[str, Any]:
     event_customer_id = (
         customer_id if customer_id is not None else customer.get("customer_id") if customer else None
     )
+    previous_event = _latest_customer_event(event_customer_id)
+
+    zone_candidate = zone or (customer.get("zone") if customer else None)
+    if _is_blank(zone_candidate) and previous_event and not _is_blank(previous_event.get("zone")):
+        zone_candidate = previous_event.get("zone")
+    safe_zone = zone_candidate or DEFAULT_ZONE_LABEL
+
+    city_candidate = city or (customer.get("city") if customer else None)
+    if _is_blank(city_candidate) and previous_event and not _is_blank(previous_event.get("city")):
+        city_candidate = previous_event.get("city")
+    safe_city = city_candidate
+
     customer_name = customer.get("name") if customer else None
     if not customer_name and metadata:
         customer_name = metadata.get("customer_name")
     lat_value = _safe_float(lat if lat is not None else customer.get("lat") if customer else None)
     lon_value = _safe_float(lon if lon is not None else customer.get("lon") if customer else None)
+    if lat_value is None and previous_event is not None:
+        lat_value = _safe_float(previous_event.get("lat"))
+    if lon_value is None and previous_event is not None:
+        lon_value = _safe_float(previous_event.get("lon"))
     if lat_value is None or lon_value is None:
         fallback_lat, fallback_lon = _resolve_zone_coordinates(safe_zone)
         if lat_value is None:
-            lat_value = fallback_lat
+            lat_value = fallback_lat if fallback_lat is not None else DEFAULT_COORDINATE_FALLBACK[0]
         if lon_value is None:
-            lon_value = fallback_lon
+            lon_value = fallback_lon if fallback_lon is not None else DEFAULT_COORDINATE_FALLBACK[1]
     event_timestamp = timestamp or datetime.now(timezone.utc)
     if isinstance(event_timestamp, str):
         timestamp_str = event_timestamp
@@ -1031,6 +1065,16 @@ def register_customer_event(
     event_entry["customer_label"] = _format_customer_label(event_customer_id, customer_name)
 
     CUSTOMER_EVENTS.append(event_entry)
+    cache_key: Optional[Any] = _normalize_customer_id(event_customer_id)
+    if cache_key is None:
+        cache_key = event_entry["event_id"]
+    if cache_key is not None:
+        if cache_key in LATEST_CUSTOMER_EVENTS:
+            del LATEST_CUSTOMER_EVENTS[cache_key]
+        LATEST_CUSTOMER_EVENTS[cache_key] = dict(event_entry)
+        # Enforce a similar cap as the main buffer to avoid unbounded growth
+        while len(LATEST_CUSTOMER_EVENTS) > CUSTOMER_EVENT_BUFFER_SIZE:
+            LATEST_CUSTOMER_EVENTS.popitem(last=False)
     CUSTOMER_EVENT_COUNTER.labels(event_type=event_type, zone=safe_zone).inc()
     return event_entry
 
@@ -1142,21 +1186,61 @@ def _filter_customer_events(
     *,
     zone: Optional[str] = None,
     event_type: Optional[str] = None,
+    latest_per_customer: bool = False,
 ) -> List[Dict[str, Any]]:
     since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
     selected: List[Dict[str, Any]] = []
-    for event in reversed(CUSTOMER_EVENTS):
-        ts = _parse_iso8601(str(event["timestamp"]))
-        if ts < since:
-            continue
-        if zone and event.get("zone") != zone:
-            continue
-        if event_type and event.get("event_type") != event_type:
-            continue
-        event_copy = dict(event)
-        event_copy["timestamp"] = ts.isoformat()
-        selected.append(event_copy)
+    if latest_per_customer:
+        _ensure_latest_events_cache()
+        seen_keys: Set[Any] = set()
+        cached_events = list(LATEST_CUSTOMER_EVENTS.values())
+        for event in reversed(cached_events):
+            ts = _parse_iso8601(str(event["timestamp"]))
+            if ts < since:
+                continue
+            event_copy = dict(event)
+            event_copy["timestamp"] = ts.isoformat()
+            key = _normalize_customer_id(event_copy.get("customer_id"))
+            if key is None:
+                key = event_copy.get("event_id")
+            if key is None:
+                continue
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            if zone and event_copy.get("zone") != zone:
+                continue
+            if event_type and event_copy.get("event_type") != event_type:
+                continue
+            selected.append(event_copy)
+    else:
+        for event in reversed(CUSTOMER_EVENTS):
+            ts = _parse_iso8601(str(event["timestamp"]))
+            if ts < since:
+                continue
+            event_copy = dict(event)
+            event_copy["timestamp"] = ts.isoformat()
+            if zone and event_copy.get("zone") != zone:
+                continue
+            if event_type and event_copy.get("event_type") != event_type:
+                continue
+            selected.append(event_copy)
     return selected
+
+
+def _latest_customer_event(customer_id: Any) -> Optional[Dict[str, Any]]:
+    if customer_id is None:
+        return None
+    normalized = _normalize_customer_id(customer_id)
+    if normalized is not None:
+        _ensure_latest_events_cache()
+        cached = LATEST_CUSTOMER_EVENTS.get(normalized)
+        if cached is not None:
+            return cached
+    for event in reversed(CUSTOMER_EVENTS):
+        if _normalize_customer_id(event.get("customer_id")) == normalized:
+            return event
+    return None
 
 
 def _summarize_customer_events(events: List[Dict[str, Any]]) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
@@ -2502,6 +2586,7 @@ async def reset_mocks(settings: EnvConfig = Depends(get_settings)) -> Dict[str, 
     AUDIT_LOG.clear()
     INCIDENT_GAUGE.set(0)
     CUSTOMER_EVENTS.clear()
+    LATEST_CUSTOMER_EVENTS.clear()
     await _ensure_customer_seed(settings)
     return results
 
@@ -2768,7 +2853,12 @@ async def get_customer_events_map_altas(
         description="Filtra por zona/barrio exacto.",
     ),
 ) -> Dict[str, Any]:
-    events = _filter_customer_events(lookback_days, zone=zone, event_type="alta")
+    events = _filter_customer_events(
+        lookback_days,
+        zone=zone,
+        event_type="alta",
+        latest_per_customer=True,
+    )
     feature_collection = _events_to_feature_collection(events)
     feature_collection["event_type"] = "alta"
     feature_collection["zone_filter"] = zone
@@ -2791,7 +2881,12 @@ async def get_customer_events_map_bajas(
         description="Filtra por zona/barrio exacto.",
     ),
 ) -> Dict[str, Any]:
-    events = _filter_customer_events(lookback_days, zone=zone, event_type="baja")
+    events = _filter_customer_events(
+        lookback_days,
+        zone=zone,
+        event_type="baja",
+        latest_per_customer=True,
+    )
     feature_collection = _events_to_feature_collection(events)
     feature_collection["event_type"] = "baja"
     feature_collection["zone_filter"] = zone
@@ -2838,7 +2933,12 @@ async def grafana_query(request: Request) -> List[Dict[str, Any]]:
             event_type = None
 
         if target_name == "customer_events_map":
-            events = _filter_customer_events(lookback_days, zone=zone_filter, event_type=event_type)
+            events = _filter_customer_events(
+                lookback_days,
+                zone=zone_filter,
+                event_type=event_type,
+                latest_per_customer=True,
+            )
             resolved_events = [_event_with_resolved_coordinates(event) for event in events]
             responses.append(_build_events_table_frame(ref_id, resolved_events))
         elif target_name == "incidents_resolved":
