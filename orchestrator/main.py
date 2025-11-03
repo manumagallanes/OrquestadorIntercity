@@ -514,6 +514,47 @@ def _normalize_customer_id(value: Any) -> Optional[str]:
         return str(value)
 
 
+def _lookup_customer_name(customer_id: Any) -> Optional[str]:
+    normalized = _normalize_customer_id(customer_id)
+    if not normalized:
+        return None
+    for event in reversed(CUSTOMER_EVENTS):
+        if _normalize_customer_id(event.get("customer_id")) == normalized:
+            name = event.get("customer_name") or (event.get("metadata") or {}).get("customer_name")
+            if name:
+                return name
+    for entry in reversed(RESOLVED_INCIDENT_LOG):
+        if _normalize_customer_id(entry.get("customer_id")) == normalized:
+            name = entry.get("customer_name")
+            if name:
+                return name
+    for entry in reversed(INCIDENT_LOG):
+        if _normalize_customer_id(entry.get("customer_id")) == normalized:
+            name = entry.get("customer_name")
+            if name:
+                return name
+    return None
+
+
+def _format_customer_label(
+    customer_id: Optional[Any], customer_name: Optional[str]
+) -> str:
+    parts: List[str] = []
+    if customer_id is not None:
+        customer_id_str = str(customer_id).strip()
+        if customer_id_str:
+            parts.append(customer_id_str)
+    if customer_name:
+        name_str = str(customer_name).strip()
+        if name_str:
+            parts.append(name_str)
+    if not parts:
+        return "Cliente sin identificar"
+    if len(parts) == 1:
+        return parts[0]
+    return " – ".join(parts)
+
+
 def _event_with_resolved_coordinates(event: Dict[str, Any]) -> Dict[str, Any]:
     zone_name = event.get("zone") or DEFAULT_ZONE_LABEL
     lat = event.get("lat")
@@ -524,6 +565,11 @@ def _event_with_resolved_coordinates(event: Dict[str, Any]) -> Dict[str, Any]:
             lat = fallback_lat if fallback_lat is not None else DEFAULT_COORDINATE_FALLBACK[0]
         if lon is None:
             lon = fallback_lon if fallback_lon is not None else DEFAULT_COORDINATE_FALLBACK[1]
+    metadata = event.get("metadata") or {}
+    customer_name = event.get("customer_name") or metadata.get("customer_name")
+    customer_label = event.get("customer_label") or _format_customer_label(
+        event.get("customer_id"), customer_name
+    )
     return {
         "event_id": event.get("event_id"),
         "timestamp": event.get("timestamp"),
@@ -533,6 +579,9 @@ def _event_with_resolved_coordinates(event: Dict[str, Any]) -> Dict[str, Any]:
         "customer_id": event.get("customer_id"),
         "lat": lat,
         "lon": lon,
+        "customer_name": customer_name,
+        "customer_label": customer_label,
+        "metadata": metadata,
     }
 
 
@@ -555,6 +604,8 @@ def _events_to_feature_collection(events: List[Dict[str, Any]]) -> Dict[str, Any
                     "zone": event.get("zone"),
                     "city": event.get("city"),
                     "customer_id": event.get("customer_id"),
+                    "customer_name": event.get("customer_name"),
+                    "customer_label": event.get("customer_label"),
                 },
             }
         )
@@ -575,7 +626,9 @@ def _build_events_table_frame(
         {"text": "zone", "type": "string"},
         {"text": "lat", "type": "number"},
         {"text": "lon", "type": "number"},
+        {"text": "customer_label", "type": "string"},
         {"text": "customer_id", "type": "string"},
+        {"text": "customer_name", "type": "string"},
         {"text": "city", "type": "string"},
         {"text": "event_type", "type": "string"},
     ]
@@ -586,6 +639,13 @@ def _build_events_table_frame(
             _parse_iso8601(str(timestamp_raw)) if timestamp_raw is not None else datetime.now(timezone.utc)
         )
         timestamp_ms = int(timestamp_dt.timestamp() * 1000)
+        metadata = event.get("metadata") or {}
+        customer_name = event.get("customer_name") or metadata.get("customer_name")
+        customer_id = "" if event.get("customer_id") is None else str(event.get("customer_id"))
+        customer_label = event.get("customer_label") or _format_customer_label(
+            customer_id if customer_id else None,
+            customer_name,
+        )
         rows.append(
             [
                 timestamp_ms,
@@ -593,7 +653,9 @@ def _build_events_table_frame(
                 event.get("zone") or DEFAULT_ZONE_LABEL,
                 event.get("lat"),
                 event.get("lon"),
-                "" if event.get("customer_id") is None else str(event.get("customer_id")),
+                customer_label,
+                customer_id,
+                customer_name or "",
                 event.get("city") or "",
                 event.get("event_type") or "",
             ]
@@ -773,6 +835,105 @@ def _build_resolved_incidents_frame(
     }
 
 
+def _build_open_incidents_frame(ref_id: str, incidents: List[Dict[str, Any]]) -> Dict[str, Any]:
+    columns = [
+        {"text": "detected_at", "type": "time"},
+        {"text": "kind", "type": "string"},
+        {"text": "customer_label", "type": "string"},
+        {"text": "customer_id", "type": "string"},
+        {"text": "action", "type": "string"},
+        {"text": "incident_id", "type": "string"},
+        {"text": "context", "type": "string"},
+    ]
+    rows: List[List[Any]] = []
+    for incident in incidents:
+        ts_raw = incident.get("timestamp") or incident.get("detected_at")
+        ts_dt = _parse_iso8601(str(ts_raw)) if ts_raw else datetime.now(timezone.utc)
+        ts_ms = int(ts_dt.timestamp() * 1000)
+        customer_label = incident.get("customer_label") or _format_customer_label(
+            incident.get("customer_id"), incident.get("customer_name")
+        )
+        context_payload = {
+            key: value
+            for key, value in incident.items()
+            if key
+            not in {
+                "timestamp",
+                "detected_at",
+                "kind",
+                "customer_id",
+                "customer_name",
+                "customer_label",
+                "action",
+                "incident_id",
+            }
+        }
+        rows.append(
+            [
+                ts_ms,
+                incident.get("kind") or "",
+                customer_label,
+                _normalize_customer_id(incident.get("customer_id")) or "",
+                incident.get("action") or "",
+                incident.get("incident_id") or "",
+                json.dumps(context_payload, separators=(",", ":"), ensure_ascii=True),
+            ]
+        )
+    return {
+        "refId": ref_id,
+        "type": "table",
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def _build_incidents_summary_frame(
+    ref_id: str, *, lookback_days: int
+) -> Dict[str, Any]:
+    since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    seen_incident_ids: set[str] = set()
+    new_incidents = 0
+    for incident in list(INCIDENT_LOG) + list(RESOLVED_INCIDENT_LOG):
+        ts_raw = incident.get("timestamp")
+        if not ts_raw:
+            continue
+        try:
+            ts = _parse_iso8601(str(ts_raw))
+        except Exception:
+            continue
+        if ts < since:
+            continue
+        incident_id = str(incident.get("incident_id") or uuid4())
+        if incident_id in seen_incident_ids:
+            continue
+        seen_incident_ids.add(incident_id)
+        new_incidents += 1
+
+    resolved_incidents = 0
+    for incident in RESOLVED_INCIDENT_LOG:
+        resolved_at = incident.get("resolved_at")
+        if not resolved_at:
+            continue
+        try:
+            resolved_ts = _parse_iso8601(str(resolved_at))
+        except Exception:
+            continue
+        if resolved_ts >= since:
+            resolved_incidents += 1
+
+    open_incidents = len(INCIDENT_LOG)
+    return {
+        "refId": ref_id,
+        "type": "table",
+        "columns": [
+            {"text": "new_incidents", "type": "number"},
+            {"text": "resolved_incidents", "type": "number"},
+            {"text": "open_incidents", "type": "number"},
+        ],
+        "rows": [[new_incidents, resolved_incidents, open_incidents]],
+    }
+
+
 def resolve_incidents(
     *,
     customer_id: Optional[Any],
@@ -837,6 +998,9 @@ def register_customer_event(
     event_customer_id = (
         customer_id if customer_id is not None else customer.get("customer_id") if customer else None
     )
+    customer_name = customer.get("name") if customer else None
+    if not customer_name and metadata:
+        customer_name = metadata.get("customer_name")
     lat_value = _safe_float(lat if lat is not None else customer.get("lat") if customer else None)
     lon_value = _safe_float(lon if lon is not None else customer.get("lon") if customer else None)
     if lat_value is None or lon_value is None:
@@ -862,7 +1026,9 @@ def register_customer_event(
         "lon": lon_value,
         "source": source,
         "metadata": metadata or {},
+        "customer_name": customer_name or "",
     }
+    event_entry["customer_label"] = _format_customer_label(event_customer_id, customer_name)
 
     CUSTOMER_EVENTS.append(event_entry)
     CUSTOMER_EVENT_COUNTER.labels(event_type=event_type, zone=safe_zone).inc()
@@ -926,6 +1092,15 @@ _seed_synthetic_customer_events()
 
 def record_incident(kind: str, detail: Dict[str, Any]) -> None:
     detail_copy = dict(detail) if detail else {}
+    customer_id = detail_copy.get("customer_id")
+    customer_name = detail_copy.get("customer_name")
+    if not customer_name and customer_id is not None:
+        customer_name = _lookup_customer_name(customer_id)
+        if customer_name:
+            detail_copy.setdefault("customer_name", customer_name)
+    detail_copy["customer_label"] = _format_customer_label(
+        detail_copy.get("customer_id"), detail_copy.get("customer_name")
+    )
     entry = {
         "incident_id": str(uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -2675,6 +2850,31 @@ async def grafana_query(request: Request) -> List[Dict[str, Any]]:
                 kind=kind_filter,
             )
             responses.append(_build_resolved_incidents_frame(ref_id, incidents))
+        elif target_name == "incidents_open":
+            kind_filter = target_payload.get("kind")
+            since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+            open_incidents: List[Dict[str, Any]] = []
+            for incident in list(INCIDENT_LOG):
+                ts_raw = incident.get("timestamp") or incident.get("detected_at")
+                incident_ts = _parse_iso8601(str(ts_raw)) if ts_raw else datetime.now(timezone.utc)
+                if incident_ts < since:
+                    continue
+                if kind_filter and incident.get("kind") != kind_filter:
+                    continue
+                open_incidents.append(dict(incident))
+            def _incident_ts(value: Dict[str, Any]) -> float:
+                raw_ts = value.get("timestamp") or value.get("detected_at")
+                try:
+                    return _parse_iso8601(str(raw_ts)).timestamp()
+                except Exception:
+                    return datetime.now(timezone.utc).timestamp()
+
+            open_incidents.sort(key=_incident_ts, reverse=True)
+            responses.append(_build_open_incidents_frame(ref_id, open_incidents))
+        elif target_name == "incidents_summary":
+            responses.append(
+                _build_incidents_summary_frame(ref_id, lookback_days=lookback_days)
+            )
         else:
             responses.append(_build_empty_table_frame(ref_id))
     return responses

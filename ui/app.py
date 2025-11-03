@@ -133,12 +133,15 @@ def decommission_section() -> None:
             step=1,
             value=707,
         )
-        dry_run = st.checkbox("Dry-run (solo reporte)", value=True)
+        dry_run = st.checkbox(
+            "Dry-run (solo reporte)",
+            value=False,
+            help="Si está activo no se ejecuta la baja real ni se generan eventos de monitoreo.",
+        )
         submitted = st.form_submit_button("Ejecutar baja")
         if submitted:
             payload: Dict[str, Any] = {"customer_id": int(customer_id)}
-            if dry_run:
-                payload["dry_run"] = True
+            payload["dry_run"] = bool(dry_run)
             success, status, data = call_api(
                 "POST", "/decommission/customer", json=payload
             )

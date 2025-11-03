@@ -247,118 +247,6 @@
       "description": "Crecimiento neto acumulado (altas - bajas) para la zona filtrada."
     },
     {
-      "id": 11,
-      "type": "timeseries",
-      "title": "Altas vs bajas (tasa)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 7
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "pointSize": 4,
-            "showPoints": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum by (event_type) (increase(orchestrator_customer_events_total{zone=~\"${zone:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{event_type}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "type": "timeseries",
-      "title": "Incidentes detectados por tipo",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 7
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "pointSize": 4,
-            "showPoints": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum by (kind) (increase(orchestrator_incidents_total[$__rate_interval]))",
-          "legendFormat": "{{kind}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -430,8 +318,8 @@
       "type": "stat",
       "title": "Incidentes resueltos en el rango",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "simpod-json-datasource",
+        "uid": "orchestrator-analytics"
       },
       "gridPos": {
         "h": 4,
@@ -460,7 +348,11 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "short",
+          "custom": {
+            "align": "center"
+          },
+          "mappings": []
         },
         "overrides": []
       },
@@ -471,9 +363,9 @@
         "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
-            "sum"
+            "last"
           ],
-          "fields": "",
+          "fields": "/^resolved_incidents$/",
           "values": false
         },
         "textMode": "value"
@@ -481,23 +373,42 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
           },
           "editorMode": "code",
-          "expr": "sum(increase(orchestrator_incidents_resolved_total[$__range]))",
-          "legendFormat": "resueltos",
-          "refId": "A"
+          "payload": {
+            "lookback_days": "$lookback_days"
+          },
+          "refId": "A",
+          "target": "incidents_summary"
         }
-      ]
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": [
+              "resolved_incidents"
+            ]
+          }
+        }
+      ],
+      "reduceOptions": {
+        "calcs": [
+          "last"
+        ],
+        "fields": "/^resolved_incidents$/",
+        "values": false
+      }
     },
     {
       "id": 14,
       "type": "stat",
       "title": "Incidentes nuevos en el rango",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "simpod-json-datasource",
+        "uid": "orchestrator-analytics"
       },
       "gridPos": {
         "h": 4,
@@ -526,7 +437,11 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "short",
+          "custom": {
+            "align": "center"
+          },
+          "mappings": []
         },
         "overrides": []
       },
@@ -537,9 +452,9 @@
         "orientation": "vertical",
         "reduceOptions": {
           "calcs": [
-            "sum"
+            "last"
           ],
-          "fields": "",
+          "fields": "/^new_incidents$/",
           "values": false
         },
         "textMode": "value"
@@ -547,44 +462,35 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
           },
           "editorMode": "code",
-          "expr": "sum(increase(orchestrator_incidents_total[$__range]))",
-          "legendFormat": "nuevos",
-          "refId": "A"
+          "payload": {
+            "lookback_days": "$lookback_days"
+          },
+          "refId": "A",
+          "target": "incidents_summary"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": [
+              "new_incidents"
+            ]
+          }
         }
       ]
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "simpod-json-datasource",
+        "uid": "orchestrator-analytics"
       },
       "fieldConfig": {
         "defaults": {
-          "decimals": 0,
-          "displayName": "Total",
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 10
-              },
-              {
-                "color": "red",
-                "value": 25
-              }
-            ]
-          },
-          "unit": "short",
           "custom": {
             "align": "left"
           }
@@ -593,68 +499,76 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Tipo"
+              "options": "detected_at"
             },
             "properties": [
               {
-                "id": "custom.displayMode",
-                "value": "color-text"
-              },
-              {
-                "id": "custom.align",
-                "value": "left"
-              },
+                "id": "displayName",
+                "value": "Detectado"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kind"
+            },
+            "properties": [
               {
                 "id": "displayName",
-                "value": "Categor\u00eda"
+                "value": "Tipo"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "customer_label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cliente"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "customer_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "action"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Flujo"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "context"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Detalle"
               },
               {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "invalid_coordinates": {
-                        "text": "Coordenadas inv\u00e1lidas"
-                      },
-                      "missing_fields": {
-                        "text": "Datos incompletos"
-                      },
-                      "hardware_mismatch": {
-                        "text": "Desajuste hardware/OLT"
-                      },
-                      "hardware_port_conflict": {
-                        "text": "Puerto PON ocupado"
-                      },
-                      "decommission_status_active": {
-                        "text": "Cliente activo al solicitar baja"
-                      },
-                      "geogrid_conflict": {
-                        "text": "Conflicto GeoGrid"
-                      },
-                      "decommission_missing_feature": {
-                        "text": "GeoGrid sin feature"
-                      },
-                      "decommission_missing_onu": {
-                        "text": "ONU inexistente"
-                      },
-                      "isp_lookup_failure": {
-                        "text": "Error consulta ISP"
-                      },
-                      "smartolt_failure": {
-                        "text": "Error SmartOLT"
-                      }
-                    }
-                  },
-                  {
-                    "type": "special",
-                    "options": {
-                      "fallback": {
-                        "text": "Otros"
-                      }
-                    }
-                  }
-                ]
+                "id": "custom.width",
+                "value": 260
               }
             ]
           }
@@ -664,66 +578,41 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 7
       },
       "id": 7,
       "options": {
         "showHeader": true,
+        "showSearch": true,
+        "pageSize": 15,
         "footer": {
-          "enablePagination": false,
+          "enablePagination": true,
           "fields": "",
           "reducer": []
-        }
+        },
+        "sortBy": [
+          {
+            "displayName": "Detectado",
+            "desc": true
+          }
+        ]
       },
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
           },
           "editorMode": "code",
-          "expr": "sum(increase(orchestrator_incidents_total[$__range])) by (kind)",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "A"
+          "payload": {},
+          "refId": "A",
+          "target": "incidents_open"
         }
       ],
-      "title": "Incidentes por tipo (acumulado)",
-      "transformations": [
-        {
-          "id": "labelsToFields",
-          "options": {
-            "valueLabel": "Value"
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "renameByName": {
-              "Value": "Nuevos",
-              "kind": "Tipo"
-            }
-          }
-        },
-        {
-          "id": "sortBy",
-          "options": {
-            "fields": {},
-            "sort": [
-              {
-                "field": "Nuevos",
-                "desc": true
-              }
-            ]
-          }
-        }
-      ],
+      "title": "Incidentes abiertos",
+      "transformations": [],
       "type": "table",
-      "description": "Incidentes detectados en la ventana de tiempo seleccionada, agrupados por tipo."
+      "description": "Registro de incidentes a\u00fan sin resolver con el cliente afectado y el detalle t\u00e9cnico."
     },
     {
       "datasource": {
@@ -859,7 +748,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 7
       },
       "id": 9,
       "options": {
@@ -916,7 +805,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 19
       },
       "id": 8,
       "options": {
@@ -936,7 +825,11 @@
             "type": "markers",
             "name": "Altas",
             "config": {
-              "color": "#2ecc71",
+              "color": {
+                "fixed": "#2ecc71",
+                "mode": "fixed"
+              },
+              "shape": "circle",
               "size": 8,
               "showLegend": true
             },
@@ -946,7 +839,8 @@
               "mapping": {
                 "latitude": "lat",
                 "longitude": "lon",
-                "name": "zone",
+                "name": "customer_label",
+                "secondary": "zone",
                 "time": "timestamp"
               }
             }
@@ -955,7 +849,11 @@
             "type": "markers",
             "name": "Bajas",
             "config": {
-              "color": "#e74c3c",
+              "color": {
+                "fixed": "#e74c3c",
+                "mode": "fixed"
+              },
+              "shape": "triangle",
               "size": 8,
               "showLegend": true
             },
@@ -965,7 +863,8 @@
               "mapping": {
                 "latitude": "lat",
                 "longitude": "lon",
-                "name": "zone",
+                "name": "customer_label",
+                "secondary": "zone",
                 "time": "timestamp"
               }
             }
@@ -975,7 +874,7 @@
           "lat": -33.12,
           "lon": -64.35,
           "lng": -64.35,
-          "zoom": 11,
+          "zoom": 10,
           "center": {
             "lat": -33.12,
             "lon": -64.35
@@ -1106,6 +1005,6 @@
   "timezone": "browser",
   "title": "Monitoreo Orquestador Intercity",
   "uid": "orchestrator-overview",
-  "version": 2,
+  "version": 8,
   "weekStart": ""
 }

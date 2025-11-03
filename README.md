@@ -248,11 +248,12 @@ Para generar datos de prueba sin tráfico real, exporta `ORCHESTRATOR_SEED_CUSTO
 
 El dashboard principal (`monitoring/grafana/dashboards/orchestrator-overview.json`) incluye:
 
-- Indicadores acumulados de altas, bajas y crecimiento neto basados en `orchestrator_customer_events_total`.
-- Conteo de incidentes activos (`orchestrator_incidents_buffer_size`) y tabla categorizada de incidentes acumulados (`sum by (kind)(orchestrator_incidents_total)`).
-- Tabla de incidentes resueltos (`target incidents_resolved`) que incluye fecha de resolución, cliente y contexto.
-- Serie temporal de incidentes clasificados por `kind`.
-- Mapa georreferenciado que consume el `target customer_events_map` vía `/query`, dibujando marcadores verdes para altas y rojos para bajas con información contextual (zona, cliente, ciudad) y fallback automático de coordenadas.
+- Controles de filtros para **zona** (regex sobre `zone`) y **ventana de días** reutilizados por todos los paneles.
+- Indicadores acumulados de altas, bajas y crecimiento neto basados en `orchestrator_customer_events_total`, con descripción contextual.
+- Series temporales de altas/bajas y de incidentes por tipo usando `increase(...[$__range])` para visualizar tendencias dentro del rango seleccionado.
+- Conteo de incidentes activos (`orchestrator_incidents_buffer_size`) y tarjetas de incidentes nuevos / resueltos calculados sobre el rango actual.
+- Tabla de incidentes abiertos (`target incidents_open`) que lista cliente, tipo y contexto de cada caso pendiente, y tabla de incidentes resueltos (`target incidents_resolved`) con detalle descargable.
+- Mapa georreferenciado que consume el `target customer_events_map` vía `/query`, dibujando marcadores verdes para altas y rojos para bajas con información contextual (zona, cliente, ciudad) y fallback automático de coordenadas. Cada marcador muestra `cliente: <id> – <nombre>` para facilitar la identificación.
 
 Todos los paneles admiten filtros temporales desde Grafana y pueden extenderse para cubrir nuevos indicadores o fuentes de datos corporativas.
 
