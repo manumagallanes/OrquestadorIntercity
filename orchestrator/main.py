@@ -9,6 +9,7 @@ from collections import OrderedDict, defaultdict, deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from contextvars import ContextVar
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
 
@@ -30,10 +31,21 @@ from .persistence import PersistenceStore
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s :: %(message)s",
 )
 logger = logging.getLogger("orchestrator")
 
+REQUEST_ID_HEADER = os.getenv("ORCHESTRATOR_REQUEST_ID_HEADER", "X-Request-ID")
+request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
+
+
+class RequestIdLoggingFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_ctx.get("-")
+        return True
+
+
+logging.getLogger().addFilter(RequestIdLoggingFilter())
 
 class CustomerSyncRequest(BaseModel):
     customer_id: int = Field(..., ge=1, description="Identifier of the ISP customer")
@@ -423,6 +435,11 @@ CUSTOMER_EVENT_COUNTER = Counter(
 INCIDENT_GAUGE = Gauge(
     "orchestrator_incidents_buffer_size",
     "Current number of incidents retained in buffer",
+)
+INTEGRATION_ERROR_COUNTER = Counter(
+    "orchestrator_integration_errors_total",
+    "Errores al invocar servicios externos",
+    ["service", "status"],
 )
 
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
@@ -1617,6 +1634,18 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid4())
+    token = request_id_ctx.set(request_id)
+    try:
+        response = await call_next(request)
+    finally:
+        request_id_ctx.reset(token)
+    response.headers[REQUEST_ID_HEADER] = request_id
+    return response
+
+
 @app.on_event("startup")
 async def seed_customers_on_startup() -> None:
     await _ensure_customer_seed(SETTINGS)
@@ -1698,6 +1727,11 @@ async def fetch_json(
     else:
         merged_headers = dict(base_headers) if base_headers else {}
         merged_headers.update(extra_headers)
+    request_id = request_id_ctx.get("-")
+    if request_id and request_id != "-":
+        if merged_headers is None:
+            merged_headers = {}
+        merged_headers.setdefault(REQUEST_ID_HEADER, request_id)
 
     response: Optional[httpx.Response] = None
     try:
@@ -1725,6 +1759,7 @@ async def fetch_json(
                     raise RetryableHTTPStatus(response.status_code, payload)
                 break
     except RetryableHTTPStatus as exc:
+        INTEGRATION_ERROR_COUNTER.labels(service=service, status=str(exc.status_code)).inc()
         if breaker_cfg and breaker_lock_for_updates:
             async with breaker_lock_for_updates:
                 _record_circuit_failure(
@@ -1741,6 +1776,7 @@ async def fetch_json(
             },
         ) from exc
     except httpx.RequestError as exc:
+        INTEGRATION_ERROR_COUNTER.labels(service=service, status="request_error").inc()
         if breaker_cfg and breaker_lock_for_updates:
             async with breaker_lock_for_updates:
                 _record_circuit_failure(
@@ -1771,6 +1807,7 @@ async def fetch_json(
             _record_circuit_success(breaker_key)
 
     if response.status_code >= 400:
+        INTEGRATION_ERROR_COUNTER.labels(service=service, status=str(response.status_code)).inc()
         detail = _safe_response_payload(response)
         raise HTTPException(
             status_code=response.status_code,
