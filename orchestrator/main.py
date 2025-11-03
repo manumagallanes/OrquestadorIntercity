@@ -12,8 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
 
-from typing_extensions import Literal
-
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, ConfigDict
@@ -26,6 +24,9 @@ from tenacity import (
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response
 
+from typing_extensions import Literal
+
+from .persistence import PersistenceStore
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -489,6 +490,19 @@ DEFAULT_COORDINATE_FALLBACK: Tuple[float, float] = ZONE_BASE_COORDINATES.get(
     "Centro", (-31.417, -64.183)
 )
 
+DATA_DIR = Path(os.getenv("ORCHESTRATOR_DATA_DIR", str(Path(__file__).resolve().parent / "data"))).resolve()
+DB_PATH = Path(os.getenv("ORCHESTRATOR_STATE_DB", str(DATA_DIR / "state.db")))
+CUSTOMER_EVENT_RETENTION_DAYS_CFG = int(os.getenv("CUSTOMER_EVENT_RETENTION_DAYS", "90"))
+INCIDENT_RETENTION_DAYS_CFG = int(os.getenv("INCIDENT_RETENTION_DAYS", "90"))
+AUDIT_RETENTION_DAYS_CFG = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
+
+persistence_store = PersistenceStore(
+    db_path=DB_PATH,
+    customer_event_retention_days=CUSTOMER_EVENT_RETENTION_DAYS_CFG,
+    incident_retention_days=INCIDENT_RETENTION_DAYS_CFG,
+    audit_retention_days=AUDIT_RETENTION_DAYS_CFG,
+)
+
 
 def _safe_float(value: Any) -> Optional[float]:
     try:
@@ -535,6 +549,66 @@ def _lookup_customer_name(customer_id: Any) -> Optional[str]:
             if name:
                 return name
     return None
+
+
+def _bootstrap_state_from_persistence() -> None:
+    try:
+        persisted_events = persistence_store.load_customer_events()
+    except Exception as exc:
+        logger.error("Failed to load customer events from persistence: %s", exc)
+        persisted_events = []
+    CUSTOMER_EVENTS.clear()
+    LATEST_CUSTOMER_EVENTS.clear()
+    for event in persisted_events:
+        CUSTOMER_EVENTS.append(event)
+        cache_key = _normalize_customer_id(event.get("customer_id")) or event.get("event_id")
+        if cache_key is None:
+            continue
+        if cache_key in LATEST_CUSTOMER_EVENTS:
+            del LATEST_CUSTOMER_EVENTS[cache_key]
+        LATEST_CUSTOMER_EVENTS[cache_key] = dict(event)
+
+    try:
+        open_incidents = persistence_store.load_open_incidents()
+        resolved_incidents = persistence_store.load_resolved_incidents()
+    except Exception as exc:
+        logger.error("Failed to load incidents from persistence: %s", exc)
+        open_incidents = []
+        resolved_incidents = []
+    INCIDENT_LOG.clear()
+    RESOLVED_INCIDENT_LOG.clear()
+    INCIDENT_LOG.extend(open_incidents)
+    RESOLVED_INCIDENT_LOG.extend(resolved_incidents)
+
+    try:
+        persisted_audits = persistence_store.load_audits()
+    except Exception as exc:
+        logger.error("Failed to load audits from persistence: %s", exc)
+        persisted_audits = []
+    AUDIT_LOG.clear()
+    for audit_entry in persisted_audits:
+        AUDIT_LOG.append(
+            AuditEntry(
+                action=audit_entry.get("action"),
+                customer_id=audit_entry.get("customer_id"),
+                user=audit_entry.get("user"),
+                dry_run=bool(audit_entry.get("dry_run")),
+                status=audit_entry.get("status"),
+                detail=audit_entry.get("detail") or {},
+                timestamp=audit_entry.get("timestamp"),
+            )
+        )
+
+    # Apply retention cleanup on startup
+    try:
+        persistence_store.purge_customer_events()
+        persistence_store.purge_incidents()
+        persistence_store.purge_audits()
+    except Exception as exc:
+        logger.error("Failed to run persistence cleanup tasks: %s", exc)
+
+
+_bootstrap_state_from_persistence()
 
 
 def _format_customer_label(
@@ -997,6 +1071,11 @@ def resolve_incidents(
         INCIDENT_LOG.clear()
         INCIDENT_LOG.extend(remaining)
         INCIDENT_GAUGE.set(len(INCIDENT_LOG))
+        try:
+            persistence_store.mark_incidents_resolved(resolved_entries)
+            persistence_store.purge_incidents()
+        except Exception as exc:
+            logger.error("Failed to persist resolved incidents: %s", exc)
     return resolved_entries
 
 
@@ -1076,6 +1155,11 @@ def register_customer_event(
         while len(LATEST_CUSTOMER_EVENTS) > CUSTOMER_EVENT_BUFFER_SIZE:
             LATEST_CUSTOMER_EVENTS.popitem(last=False)
     CUSTOMER_EVENT_COUNTER.labels(event_type=event_type, zone=safe_zone).inc()
+    try:
+        persistence_store.save_customer_event(event_entry)
+        persistence_store.purge_customer_events()
+    except Exception as exc:
+        logger.error("Failed to persist customer event %s: %s", event_entry.get("event_id"), exc)
     return event_entry
 
 
@@ -1154,6 +1238,10 @@ def record_incident(kind: str, detail: Dict[str, Any]) -> None:
     INCIDENT_LOG.append(entry)
     INCIDENT_COUNTER.labels(kind=kind).inc()
     INCIDENT_GAUGE.set(len(INCIDENT_LOG))
+    try:
+        persistence_store.save_incident(entry)
+    except Exception as exc:
+        logger.error("Failed to persist incident %s: %s", entry.get("incident_id"), exc)
     logger.warning("Incident recorded %s :: %s", kind, detail)
 
 
@@ -1168,6 +1256,22 @@ def record_audit(entry: AuditEntry) -> None:
         entry.dry_run,
         entry.detail,
     )
+    try:
+        persistence_store.save_audit(
+            {
+                "audit_id": str(uuid4()),
+                "action": entry.action,
+                "customer_id": entry.customer_id,
+                "user": entry.user,
+                "dry_run": 1 if entry.dry_run else 0,
+                "status": entry.status,
+                "detail": entry.detail,
+                "timestamp": entry.timestamp,
+            }
+        )
+        persistence_store.purge_audits()
+    except Exception as exc:
+        logger.error("Failed to persist audit entry: %s", exc)
 
 
 def _parse_iso8601(value: str) -> datetime:
@@ -2587,6 +2691,10 @@ async def reset_mocks(settings: EnvConfig = Depends(get_settings)) -> Dict[str, 
     INCIDENT_GAUGE.set(0)
     CUSTOMER_EVENTS.clear()
     LATEST_CUSTOMER_EVENTS.clear()
+    try:
+        persistence_store.reset()
+    except Exception as exc:
+        logger.error("Failed to reset persistence store: %s", exc)
     await _ensure_customer_seed(settings)
     return results
 
