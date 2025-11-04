@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 
 import httpx
 import streamlit as st
@@ -218,9 +218,55 @@ def audits_section() -> None:
         else:
             display_response(success, status, data)
 
+def reconciliation_section() -> None:
+    st.subheader("7. Conciliación de integraciones")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("Ejecutar conciliación ahora"):
+            success, status, data = call_api("POST", "/analytics/reconciliation/run")
+            display_response(success, status, data)
+    with col2:
+        with st.form("reconciliation_form"):
+            limit = st.number_input(
+                "Cantidad de registros",
+                min_value=10,
+                max_value=500,
+                value=200,
+                step=10,
+            )
+            submitted = st.form_submit_button("Ver resultados")
+            if submitted:
+                params = {"limit": int(limit)}
+                success, status, data = call_api(
+                    "GET", "/analytics/reconciliation/results", params=params
+                )
+                if success and isinstance(data, dict):
+                    issues = data.get("issues") or []
+                    if issues:
+                        formatted: List[Dict[str, Any]] = []
+                        for issue in issues:
+                            detail = issue.get("detail")
+                            if isinstance(detail, dict):
+                                detail_value = json.dumps(detail, ensure_ascii=False)
+                            else:
+                                detail_value = str(detail)
+                            formatted.append(
+                                {
+                                    "timestamp": issue.get("timestamp"),
+                                    "issue_type": issue.get("issue_type"),
+                                    "customer_id": issue.get("customer_id"),
+                                    "detail": detail_value,
+                                }
+                            )
+                        st.dataframe(formatted)
+                    else:
+                        st.info("Sin inconsistencias registradas.")
+                else:
+                    display_response(success, status, data)
+
 
 def isp_controls_section() -> None:
-    st.subheader("7. Herramientas demo para ISP-Cube")
+    st.subheader("8. Herramientas demo para ISP-Cube")
     col1, col2 = st.columns(2)
     with col1:
         with st.form("isp_flag_form"):
@@ -675,6 +721,7 @@ def main() -> None:
     incidents_section()
     features_section()
     audits_section()
+    reconciliation_section()
     isp_controls_section()
 
 

@@ -675,6 +675,108 @@
       "transformations": [],
       "type": "geomap",
       "description": "Distribuci\u00f3n geogr\u00e1fica de altas (verde) y bajas (rojo) en el periodo seleccionado."
+    },
+    {
+      "datasource": {
+        "type": "simpod-json-datasource",
+        "uid": "orchestrator-analytics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "center"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
+          },
+          "editorMode": "code",
+          "payload": {
+            "limit": 200
+          },
+          "refId": "A",
+          "target": "reconciliation_summary"
+        }
+      ],
+      "title": "Conciliaci\u00f3n \u2013 resumen \u00faltima ejecuci\u00f3n",
+      "transformations": [],
+      "type": "table",
+      "description": "Conteo de inconsistencias detectadas en la ejecuci\u00f3n m\u00e1s reciente."
+    },
+    {
+      "datasource": {
+        "type": "simpod-json-datasource",
+        "uid": "orchestrator-analytics"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "id": 16,
+      "options": {
+        "showHeader": true,
+        "showSearch": true,
+        "pageSize": 15,
+        "footer": {
+          "enablePagination": true,
+          "fields": "",
+          "reducer": []
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "orchestrator-analytics"
+          },
+          "editorMode": "code",
+          "payload": {
+            "limit": 400
+          },
+          "refId": "A",
+          "target": "reconciliation_results"
+        }
+      ],
+      "title": "Conciliaci\u00f3n \u2013 inconsistencias detectadas",
+      "transformations": [],
+      "type": "table",
+      "description": "Detalle de recursos faltantes o sobrantes entre ISP-Cube, GeoGrid y SmartOLT."
     }
   ],
   "refresh": "30s",

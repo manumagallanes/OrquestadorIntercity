@@ -512,12 +512,14 @@ DB_PATH = Path(os.getenv("ORCHESTRATOR_STATE_DB", str(DATA_DIR / "state.db")))
 CUSTOMER_EVENT_RETENTION_DAYS_CFG = int(os.getenv("CUSTOMER_EVENT_RETENTION_DAYS", "90"))
 INCIDENT_RETENTION_DAYS_CFG = int(os.getenv("INCIDENT_RETENTION_DAYS", "90"))
 AUDIT_RETENTION_DAYS_CFG = int(os.getenv("AUDIT_RETENTION_DAYS", "90"))
+RECONCILIATION_RETENTION_DAYS_CFG = int(os.getenv("RECONCILIATION_RETENTION_DAYS", "30"))
 
 persistence_store = PersistenceStore(
     db_path=DB_PATH,
     customer_event_retention_days=CUSTOMER_EVENT_RETENTION_DAYS_CFG,
     incident_retention_days=INCIDENT_RETENTION_DAYS_CFG,
     audit_retention_days=AUDIT_RETENTION_DAYS_CFG,
+    reconciliation_retention_days=RECONCILIATION_RETENTION_DAYS_CFG,
 )
 
 
@@ -621,11 +623,295 @@ def _bootstrap_state_from_persistence() -> None:
         persistence_store.purge_customer_events()
         persistence_store.purge_incidents()
         persistence_store.purge_audits()
+        persistence_store.purge_reconciliation_results()
     except Exception as exc:
         logger.error("Failed to run persistence cleanup tasks: %s", exc)
 
 
 _bootstrap_state_from_persistence()
+
+
+async def _fetch_isp_customers(settings: EnvConfig) -> List[Dict[str, Any]]:
+    client_kwargs, region = settings.http_client_kwargs("isp")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        data = await fetch_json(
+            client,
+            "GET",
+            "/customers",
+            service="isp",
+            settings=settings,
+            region_name=region,
+        )
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and "customers" in data:
+        customers = data.get("customers")
+        return customers if isinstance(customers, list) else []
+    return []
+
+
+async def _fetch_geogrid_features(settings: EnvConfig) -> List[Dict[str, Any]]:
+    client_kwargs, region = settings.http_client_kwargs("geogrid")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        data = await fetch_json(
+            client,
+            "GET",
+            "/features",
+            service="geogrid",
+            settings=settings,
+            region_name=region,
+        )
+    if isinstance(data, list):
+        return data
+    return []
+
+
+async def _fetch_smartolt_onus(settings: EnvConfig) -> List[Dict[str, Any]]:
+    client_kwargs, region = settings.http_client_kwargs("smartolt")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        data = await fetch_json(
+            client,
+            "GET",
+            "/onus",
+            service="smartolt",
+            settings=settings,
+            region_name=region,
+        )
+    if isinstance(data, dict):
+        onus = data.get("onus")
+        if isinstance(onus, list):
+            return onus
+    return []
+
+
+async def _run_reconciliation(settings: EnvConfig) -> Dict[str, Any]:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    try:
+        isp_customers = await _fetch_isp_customers(settings)
+    except Exception as exc:
+        logger.error("Failed to fetch customers from ISP: %s", exc)
+        isp_customers = []
+
+    try:
+        geogrid_features = await _fetch_geogrid_features(settings)
+    except Exception as exc:
+        logger.error("Failed to fetch features from GeoGrid: %s", exc)
+        geogrid_features = []
+
+    try:
+        smartolt_onus = await _fetch_smartolt_onus(settings)
+    except Exception as exc:
+        logger.error("Failed to fetch ONUs from SmartOLT: %s", exc)
+        smartolt_onus = []
+
+    isp_by_customer: Dict[int, Dict[str, Any]] = {}
+    for entry in isp_customers:
+        try:
+            cid = int(entry.get("customer_id"))
+        except (TypeError, ValueError):
+            continue
+        isp_by_customer[cid] = entry
+
+    geogrid_by_customer: Dict[int, Dict[str, Any]] = {}
+    for feature in geogrid_features:
+        attrs = feature.get("attrs") or {}
+        customer_ref = attrs.get("customer_id")
+        try:
+            cid = int(customer_ref)
+        except (TypeError, ValueError):
+            continue
+        geogrid_by_customer[cid] = feature
+
+    smartolt_by_sn: Dict[str, Dict[str, Any]] = {}
+    smartolt_by_port: Dict[Tuple[int, int, int], Dict[str, Any]] = {}
+    for onu in smartolt_onus:
+        onu_sn = str(onu.get("onu_sn") or "").strip().lower()
+        if onu_sn:
+            smartolt_by_sn[onu_sn] = onu
+        try:
+            key = (int(onu.get("olt_id")), int(onu.get("board")), int(onu.get("pon_port")))
+        except (TypeError, ValueError):
+            continue
+        smartolt_by_port[key] = onu
+
+    issues: List[Dict[str, Any]] = []
+    counts: Dict[str, int] = defaultdict(int)
+
+    for customer_id, customer in isp_by_customer.items():
+        status = str(customer.get("status") or "").lower()
+        integration_enabled = bool(customer.get("integration_enabled", True))
+        onu_sn = str(customer.get("onu_sn") or "").strip().lower()
+        olt = customer.get("olt_id")
+        board = customer.get("board")
+        pon = customer.get("pon") or customer.get("pon_port")
+
+        # GeoGrid presence
+        feature = geogrid_by_customer.get(customer_id)
+        if not feature and status == "active" and integration_enabled:
+            issues.append(
+                {
+                    "reconciliation_id": str(uuid4()),
+                    "issue_type": "missing_geogrid",
+                    "customer_id": customer_id,
+                    "detail": {
+                        "message": "Cliente activo sin feature en GeoGrid",
+                        "customer": customer_id,
+                        "customer_name": customer.get("name"),
+                    },
+                }
+            )
+            counts["missing_geogrid"] += 1
+        if feature and status == "inactive":
+            issues.append(
+                {
+                    "reconciliation_id": str(uuid4()),
+                    "issue_type": "inactive_geogrid_resource",
+                    "customer_id": customer_id,
+                    "detail": {
+                        "message": "Cliente inactivo con feature en GeoGrid",
+                        "customer": customer_id,
+                        "feature_id": feature.get("id"),
+                    },
+                }
+            )
+            counts["inactive_geogrid_resource"] += 1
+
+        # SmartOLT presence
+        onu_entry = None
+        if onu_sn:
+            onu_entry = smartolt_by_sn.get(onu_sn)
+        if onu_entry is None and olt is not None and board is not None and pon is not None:
+            try:
+                key = (int(olt), int(board), int(pon))
+                onu_entry = smartolt_by_port.get(key)
+            except (TypeError, ValueError):
+                onu_entry = None
+
+        if onu_entry is None and status == "active" and integration_enabled:
+            issues.append(
+                {
+                    "reconciliation_id": str(uuid4()),
+                    "issue_type": "missing_smartolt",
+                    "customer_id": customer_id,
+                    "detail": {
+                        "message": "Cliente activo sin ONU autorizada en SmartOLT",
+                        "customer": customer_id,
+                        "olt_id": olt,
+                        "board": board,
+                        "pon_port": pon,
+                        "onu_sn": customer.get("onu_sn"),
+                    },
+                }
+            )
+            counts["missing_smartolt"] += 1
+        if onu_entry is not None and status == "inactive":
+            issues.append(
+                {
+                    "reconciliation_id": str(uuid4()),
+                    "issue_type": "inactive_smartolt_resource",
+                    "customer_id": customer_id,
+                    "detail": {
+                        "message": "Cliente inactivo con ONU autorizada en SmartOLT",
+                        "customer": customer_id,
+                        "onu_id": onu_entry.get("onu_id"),
+                        "olt_id": onu_entry.get("olt_id"),
+                        "board": onu_entry.get("board"),
+                        "pon_port": onu_entry.get("pon_port"),
+                        "onu_sn": onu_entry.get("onu_sn"),
+                    },
+                }
+            )
+            counts["inactive_smartolt_resource"] += 1
+
+    # GeoGrid orphan features
+    for feature in geogrid_features:
+        attrs = feature.get("attrs") or {}
+        customer_ref = attrs.get("customer_id")
+        try:
+            cid = int(customer_ref)
+        except (TypeError, ValueError):
+            cid = None
+        if cid is None or cid not in isp_by_customer:
+            issues.append(
+                {
+                    "reconciliation_id": str(uuid4()),
+                    "issue_type": "orphan_geogrid_feature",
+                    "customer_id": cid,
+                    "detail": {
+                        "message": "Feature sin cliente correspondiente en ISP-Cube",
+                        "feature_id": feature.get("id"),
+                        "customer_id": customer_ref,
+                        "onu_sn": (attrs.get("onu_sn") if isinstance(attrs, dict) else None),
+                    },
+                }
+            )
+            counts["orphan_geogrid_feature"] += 1
+
+    # SmartOLT orphan ONUs
+    for onu in smartolt_onus:
+        onu_sn = str(onu.get("onu_sn") or "").strip().lower()
+        try:
+            key = (int(onu.get("olt_id")), int(onu.get("board")), int(onu.get("pon_port")))
+        except (TypeError, ValueError):
+            key = None
+
+        matched = False
+        if onu_sn and any(onu_sn == str((cust.get("onu_sn") or "")).strip().lower() for cust in isp_by_customer.values()):
+            matched = True
+        elif key:
+            matched = any(
+                (cust.get("olt_id"), cust.get("board"), cust.get("pon") or cust.get("pon_port")) == key
+                for cust in isp_by_customer.values()
+            )
+
+        if not matched:
+            issues.append(
+                {
+                    "reconciliation_id": str(uuid4()),
+                    "issue_type": "orphan_smartolt_onu",
+                    "customer_id": None,
+                    "detail": {
+                        "message": "ONU presente en SmartOLT sin cliente asociado en ISP-Cube",
+                        "onu_id": onu.get("onu_id"),
+                        "onu_sn": onu.get("onu_sn"),
+                        "olt_id": onu.get("olt_id"),
+                        "board": onu.get("board"),
+                        "pon_port": onu.get("pon_port"),
+                    },
+                }
+            )
+            counts["orphan_smartolt_onu"] += 1
+
+    summary_entry = {
+        "reconciliation_id": str(uuid4()),
+        "issue_type": "summary",
+        "customer_id": None,
+        "detail": {
+            "counts": dict(counts),
+            "totals": {
+                "isp_customers": len(isp_by_customer),
+                "geogrid_features": len(geogrid_features),
+                "smartolt_onus": len(smartolt_onus),
+            },
+        },
+    }
+
+    try:
+        persistence_store.save_reconciliation_results(timestamp, issues + [summary_entry])
+        persistence_store.purge_reconciliation_results()
+    except Exception as exc:
+        logger.error("Failed to persist reconciliation results: %s", exc)
+
+    return {
+        "generated_at": timestamp,
+        "totals": {
+            "isp_customers": len(isp_by_customer),
+            "geogrid_features": len(geogrid_features),
+            "smartolt_onus": len(smartolt_onus),
+        },
+        "issues": issues,
+        "issue_counts": dict(counts),
+    }
 
 
 def _format_customer_label(
@@ -781,6 +1067,101 @@ def _build_events_table_frame(
 
 def _build_empty_table_frame(ref_id: str) -> Dict[str, Any]:
     return _build_events_table_frame(ref_id, [])
+
+
+def _build_reconciliation_results_frame(
+    ref_id: str, issues: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    columns = [
+        {"text": "timestamp", "type": "time"},
+        {"text": "timestamp_iso", "type": "string"},
+        {"text": "issue_type", "type": "string"},
+        {"text": "customer_id", "type": "string"},
+        {"text": "detail", "type": "string"},
+    ]
+    rows: List[List[Any]] = []
+    for issue in issues:
+        if issue.get("issue_type") == "summary":
+            continue
+        timestamp_raw = issue.get("timestamp")
+        timestamp_dt = (
+            _parse_iso8601(str(timestamp_raw)) if timestamp_raw else datetime.now(timezone.utc)
+        )
+        timestamp_ms = int(timestamp_dt.timestamp() * 1000)
+        detail = issue.get("detail") or {}
+        detail_str = json.dumps(detail, ensure_ascii=False) if isinstance(detail, dict) else str(detail)
+        customer_id = issue.get("customer_id")
+        rows.append(
+            [
+                timestamp_ms,
+                timestamp_dt.isoformat(),
+                issue.get("issue_type") or "",
+                "" if customer_id is None else str(customer_id),
+                detail_str,
+            ]
+        )
+    return {
+        "refId": ref_id,
+        "type": "table",
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def _build_reconciliation_summary_frame(
+    ref_id: str, issues: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    columns = [
+        {"text": "timestamp", "type": "time"},
+        {"text": "timestamp_iso", "type": "string"},
+        {"text": "issue_type", "type": "string"},
+        {"text": "count", "type": "number"},
+    ]
+    rows: List[List[Any]] = []
+    summary_records = [issue for issue in issues if issue.get("issue_type") == "summary"]
+    if summary_records:
+        latest_summary = summary_records[0]
+        timestamp_raw = latest_summary.get("timestamp")
+        timestamp_dt = _parse_iso8601(str(timestamp_raw)) if timestamp_raw else datetime.now(timezone.utc)
+        timestamp_ms = int(timestamp_dt.timestamp() * 1000)
+        detail = latest_summary.get("detail") or {}
+        counts = detail.get("counts") if isinstance(detail, dict) else {}
+        if isinstance(counts, dict) and counts:
+            for issue_type, count in sorted(counts.items(), key=lambda item: item[0]):
+                rows.append(
+                    [
+                        timestamp_ms,
+                        timestamp_dt.isoformat(),
+                        issue_type,
+                        count,
+                    ]
+                )
+        else:
+            rows.append(
+                [
+                    timestamp_ms,
+                    timestamp_dt.isoformat(),
+                    "sin_inconsistencias",
+                    0,
+                ]
+            )
+    else:
+        timestamp_dt = datetime.now(timezone.utc)
+        timestamp_ms = int(timestamp_dt.timestamp() * 1000)
+        rows.append(
+            [
+                timestamp_ms,
+                timestamp_dt.isoformat(),
+                "sin_datos",
+                0,
+            ]
+        )
+    return {
+        "refId": ref_id,
+        "type": "table",
+        "columns": columns,
+        "rows": rows,
+    }
 
 
 def _resolve_lookback_days(range_info: Dict[str, Any], candidate: Any) -> int:
@@ -2777,6 +3158,32 @@ async def create_customer_event(
     return {"event": event_entry}
 
 
+@app.post(
+    "/analytics/reconciliation/run",
+    summary="Ejecuta conciliación entre ISP-Cube, GeoGrid y SmartOLT",
+)
+async def run_reconciliation_endpoint(
+    settings: EnvConfig = Depends(get_settings),
+) -> Dict[str, Any]:
+    return await _run_reconciliation(settings)
+
+
+@app.get(
+    "/analytics/reconciliation/results",
+    summary="Resultados de conciliaciones recientes",
+)
+async def list_reconciliation_results(
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> Dict[str, Any]:
+    issues = persistence_store.load_reconciliation_results(limit=limit)
+    latest_timestamp: Optional[str] = issues[0].get("timestamp") if issues else None
+    return {
+        "generated_at": latest_timestamp,
+        "count": len(issues),
+        "issues": issues,
+    }
+
+
 @app.get(
     "/analytics/customer-events",
     summary="Eventos de altas y bajas georreferenciados",
@@ -3120,6 +3527,20 @@ async def grafana_query(request: Request) -> List[Dict[str, Any]]:
             responses.append(
                 _build_incidents_summary_frame(ref_id, lookback_days=lookback_days)
             )
+        elif target_name == "reconciliation_results":
+            try:
+                limit = int(target_payload.get("limit", 200))
+            except (TypeError, ValueError):
+                limit = 200
+            issues = persistence_store.load_reconciliation_results(limit=limit)
+            responses.append(_build_reconciliation_results_frame(ref_id, issues))
+        elif target_name == "reconciliation_summary":
+            try:
+                limit = int(target_payload.get("limit", 200))
+            except (TypeError, ValueError):
+                limit = 200
+            issues = persistence_store.load_reconciliation_results(limit=limit)
+            responses.append(_build_reconciliation_summary_frame(ref_id, issues))
         else:
             responses.append(_build_empty_table_frame(ref_id))
     return responses

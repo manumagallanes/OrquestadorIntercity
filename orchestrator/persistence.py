@@ -13,11 +13,13 @@ class PersistenceStore:
         customer_event_retention_days: int,
         incident_retention_days: int,
         audit_retention_days: int,
+        reconciliation_retention_days: int,
     ) -> None:
         self._db_path = db_path
         self._customer_event_retention_days = customer_event_retention_days
         self._incident_retention_days = incident_retention_days
         self._audit_retention_days = audit_retention_days
+        self._reconciliation_retention_days = reconciliation_retention_days
         self._lock = threading.RLock()
         self._ensure_database()
 
@@ -218,6 +220,61 @@ class PersistenceStore:
             conn.execute("DELETE FROM customer_events")
             conn.execute("DELETE FROM incidents")
             conn.execute("DELETE FROM audits")
+            conn.execute("DELETE FROM reconciliation_results")
+            conn.commit()
+
+    def save_reconciliation_results(
+        self, timestamp: str, issues: Iterable[Dict[str, Any]]
+    ) -> None:
+        with self._connection() as conn:
+            for issue in issues:
+                conn.execute(
+                    """
+                    INSERT INTO reconciliation_results (
+                        reconciliation_id,
+                        timestamp,
+                        issue_type,
+                        customer_id,
+                        detail
+                    )
+                    VALUES (
+                        :reconciliation_id,
+                        :timestamp,
+                        :issue_type,
+                        :customer_id,
+                        :detail
+                    )
+                    """,
+                    {
+                        "reconciliation_id": issue.get("reconciliation_id"),
+                        "timestamp": timestamp,
+                        "issue_type": issue.get("issue_type"),
+                        "customer_id": issue.get("customer_id"),
+                        "detail": json.dumps(issue.get("detail") or {}),
+                    },
+                )
+            conn.commit()
+
+    def load_reconciliation_results(self, limit: int = 200) -> List[Dict[str, Any]]:
+        query = """
+            SELECT reconciliation_id, timestamp, issue_type, customer_id, detail
+            FROM reconciliation_results
+            ORDER BY datetime(timestamp) DESC
+            LIMIT :limit
+        """
+        with self._connection() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, {"limit": limit}).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def purge_reconciliation_results(self) -> None:
+        retention_expr = f"-{max(self._reconciliation_retention_days, 1)} days"
+        query = """
+            DELETE FROM reconciliation_results
+            WHERE timestamp < datetime('now', :retention)
+        """
+        with self._connection() as conn:
+            conn.execute(query, {"retention": retention_expr})
             conn.commit()
 
     # -- Internal helpers -----------------------------------------------
@@ -274,6 +331,17 @@ class PersistenceStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reconciliation_results (
+                    reconciliation_id TEXT PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    issue_type TEXT NOT NULL,
+                    customer_id INTEGER,
+                    detail TEXT
+                )
+                """
+            )
             conn.commit()
 
     def _connection(self) -> sqlite3.Connection:
@@ -293,4 +361,3 @@ class PersistenceStore:
             else:
                 data[key] = value
         return data
-
