@@ -27,7 +27,7 @@
       "default_region": "rio-cuarto",
       "regions": {
         "rio-cuarto": {
-          "base_url": "https://api.geogridmaps.com.br/v2",
+          "base_url": "https://api.geogridmaps.com.br/api/v3",
           "timeout_seconds": 15.0,
           "verify_tls": true,
           "retry": {
@@ -41,28 +41,6 @@
           },
           "default_headers": {
             "Authorization": "env:GEOGRID_BEARER"
-          }
-        }
-      }
-    },
-    "smartolt": {
-      "default_region": "rio-cuarto",
-      "regions": {
-        "rio-cuarto": {
-          "base_url": "https://api.smartolt.com/v2",
-          "timeout_seconds": 18.0,
-          "verify_tls": true,
-          "retry": {
-            "max_attempts": 5,
-            "backoff_initial_seconds": 0.5,
-            "backoff_max_seconds": 8.0
-          },
-          "circuit_breaker": {
-            "failure_threshold": 3,
-            "recovery_timeout_seconds": 60.0
-          },
-          "default_headers": {
-            "X-Token": "env:SMARTOLT_TOKEN"
           }
         }
       }

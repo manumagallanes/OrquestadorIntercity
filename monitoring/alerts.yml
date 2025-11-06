@@ -9,11 +9,11 @@
          annotations:
            summary: "Incidentes abiertos en el orquestador"
            description: "El buffer del orquestador tiene incidentes sin resolver por más de 15 minutos."
-       - alert: OrchestratorSmartOLTErrors
-         expr: increase(orchestrator_integration_errors_total{service="smartolt"}[5m]) > 0
+       - alert: OrchestratorGeoGridErrors
+         expr: increase(orchestrator_integration_errors_total{service="geogrid"}[5m]) > 0
          for: 5m
          labels:
            severity: critical
          annotations:
-           summary: "Fallas recurrentes al integrar con SmartOLT"
-           description: "Se detectaron errores al llamar a SmartOLT durante los últimos 5 minutos."
+           summary: "Fallas recurrentes al integrar con GeoGrid"
+           description: "Se detectaron errores al llamar a GeoGrid durante los últimos 5 minutos."

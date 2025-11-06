@@ -28,6 +28,8 @@ from starlette.responses import Response
 from typing_extensions import Literal
 
 from .persistence import PersistenceStore
+from .services import geogrid as geogrid_service
+from .services import isp as isp_service
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -294,11 +296,6 @@ class EnvConfig(BaseModel):
     def geogrid_base_url(self) -> str:
         return self.service_base_url("geogrid")
 
-    @property
-    def smartolt_base_url(self) -> str:
-        return self.service_base_url("smartolt")
-
-
 @dataclass
 class CircuitBreakerState:
     failure_count: int = 0
@@ -359,7 +356,6 @@ def load_env_config() -> EnvConfig:
     override_map = {
         "isp": os.getenv("ISP_BASE_URL"),
         "geogrid": os.getenv("GEOGRID_BASE_URL"),
-        "smartolt": os.getenv("SMARTOLT_BASE_URL"),
     }
     for service_name, base_override in override_map.items():
         if base_override:
@@ -447,9 +443,8 @@ PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 REQUIRED_CUSTOMER_FIELDS: List[str] = [
     "lat",
-    "lon",
-    "zone",
-    "odb",
+    "lng",
+    "address",
     "olt_id",
     "board",
     "pon",
@@ -473,13 +468,13 @@ INCIDENT_KIND_LABELS: Dict[str, str] = {
     "integration_disabled": "Integración deshabilitada",
     "invalid_coordinates": "Coordenadas inválidas",
     "hardware_mismatch": "Desajuste hardware/OLT",
-    "hardware_port_conflict": "Puerto PON ocupado",
     "decommission_status_active": "Cliente activo al solicitar baja",
-    "decommission_missing_feature": "GeoGrid sin feature",
-    "decommission_missing_onu": "ONU inexistente en SmartOLT",
+    "decommission_missing_feature": "GeoGrid sin registro",
     "geogrid_conflict": "Conflicto GeoGrid",
     "isp_lookup_failure": "Error consulta ISP",
-    "smartolt_failure": "Error SmartOLT",
+    "geogrid_assignment_conflict": "Puerto en uso en GeoGrid",
+    "missing_geogrid_assignment": "Cliente sin asignación de puerto",
+    "orphan_geogrid_cliente": "Cliente GeoGrid sin contraparte",
 }
 ZONE_BASE_COORDINATES: Dict[str, Tuple[float, float]] = {
     "Centro": (-31.417, -64.183),
@@ -631,256 +626,143 @@ def _bootstrap_state_from_persistence() -> None:
 _bootstrap_state_from_persistence()
 
 
-async def _fetch_isp_customers(settings: EnvConfig) -> List[Dict[str, Any]]:
-    client_kwargs, region = settings.http_client_kwargs("isp")
-    async with httpx.AsyncClient(**client_kwargs) as client:
-        data = await fetch_json(
-            client,
-            "GET",
-            "/customers",
-            service="isp",
-            settings=settings,
-            region_name=region,
-        )
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and "customers" in data:
-        customers = data.get("customers")
-        return customers if isinstance(customers, list) else []
-    return []
-
-
-async def _fetch_geogrid_features(settings: EnvConfig) -> List[Dict[str, Any]]:
-    client_kwargs, region = settings.http_client_kwargs("geogrid")
-    async with httpx.AsyncClient(**client_kwargs) as client:
-        data = await fetch_json(
-            client,
-            "GET",
-            "/features",
-            service="geogrid",
-            settings=settings,
-            region_name=region,
-        )
-    if isinstance(data, list):
-        return data
-    return []
-
-
-async def _fetch_smartolt_onus(settings: EnvConfig) -> List[Dict[str, Any]]:
-    client_kwargs, region = settings.http_client_kwargs("smartolt")
-    async with httpx.AsyncClient(**client_kwargs) as client:
-        data = await fetch_json(
-            client,
-            "GET",
-            "/onus",
-            service="smartolt",
-            settings=settings,
-            region_name=region,
-        )
-    if isinstance(data, dict):
-        onus = data.get("onus")
-        if isinstance(onus, list):
-            return onus
-    return []
 
 
 async def _run_reconciliation(settings: EnvConfig) -> Dict[str, Any]:
     timestamp = datetime.now(timezone.utc).isoformat()
     try:
-        isp_customers = await _fetch_isp_customers(settings)
+        isp_customers = await isp_service.list_customers(settings, fetch_json)
     except Exception as exc:
         logger.error("Failed to fetch customers from ISP: %s", exc)
         isp_customers = []
 
     try:
-        geogrid_features = await _fetch_geogrid_features(settings)
+        geogrid_clientes = await geogrid_service.list_clientes(settings, fetch_json)
     except Exception as exc:
         logger.error("Failed to fetch features from GeoGrid: %s", exc)
-        geogrid_features = []
+        geogrid_clientes = []
 
-    try:
-        smartolt_onus = await _fetch_smartolt_onus(settings)
-    except Exception as exc:
-        logger.error("Failed to fetch ONUs from SmartOLT: %s", exc)
-        smartolt_onus = []
-
-    isp_by_customer: Dict[int, Dict[str, Any]] = {}
+    isp_by_code: Dict[str, Dict[str, Any]] = {}
+    isp_by_id: Dict[int, Dict[str, Any]] = {}
     for entry in isp_customers:
+        if not isinstance(entry, dict):
+            continue
+        code = str(entry.get("code") or "").strip().lower()
+        if not code:
+            continue
+        isp_by_code[code] = entry
         try:
             cid = int(entry.get("customer_id"))
+            isp_by_id[cid] = entry
         except (TypeError, ValueError):
             continue
-        isp_by_customer[cid] = entry
 
-    geogrid_by_customer: Dict[int, Dict[str, Any]] = {}
-    for feature in geogrid_features:
-        attrs = feature.get("attrs") or {}
-        customer_ref = attrs.get("customer_id")
-        try:
-            cid = int(customer_ref)
-        except (TypeError, ValueError):
+    geogrid_by_code: Dict[str, Dict[str, Any]] = {}
+    for cliente in geogrid_clientes:
+        if not isinstance(cliente, dict):
             continue
-        geogrid_by_customer[cid] = feature
-
-    smartolt_by_sn: Dict[str, Dict[str, Any]] = {}
-    smartolt_by_port: Dict[Tuple[int, int, int], Dict[str, Any]] = {}
-    for onu in smartolt_onus:
-        onu_sn = str(onu.get("onu_sn") or "").strip().lower()
-        if onu_sn:
-            smartolt_by_sn[onu_sn] = onu
-        try:
-            key = (int(onu.get("olt_id")), int(onu.get("board")), int(onu.get("pon_port")))
-        except (TypeError, ValueError):
-            continue
-        smartolt_by_port[key] = onu
+        codigo = str(cliente.get("codigoIntegracao") or "").strip().lower()
+        if codigo:
+            geogrid_by_code[codigo] = cliente
 
     issues: List[Dict[str, Any]] = []
     counts: Dict[str, int] = defaultdict(int)
 
-    for customer_id, customer in isp_by_customer.items():
+    for code, customer in isp_by_code.items():
+        customer_id = customer.get("customer_id")
         status = str(customer.get("status") or "").lower()
         integration_enabled = bool(customer.get("integration_enabled", True))
-        onu_sn = str(customer.get("onu_sn") or "").strip().lower()
-        olt = customer.get("olt_id")
-        board = customer.get("board")
-        pon = customer.get("pon") or customer.get("pon_port")
-
-        # GeoGrid presence
-        feature = geogrid_by_customer.get(customer_id)
-        if not feature and status == "active" and integration_enabled:
+        geogrid_entry = geogrid_by_code.get(code)
+        if integration_enabled and status in {"enabled", "active"} and not geogrid_entry:
             issues.append(
                 {
                     "reconciliation_id": str(uuid4()),
                     "issue_type": "missing_geogrid",
                     "customer_id": customer_id,
                     "detail": {
-                        "message": "Cliente activo sin feature en GeoGrid",
-                        "customer": customer_id,
+                        "message": "Cliente activo sin registro asociado en GeoGrid",
+                        "customer_code": customer.get("code"),
                         "customer_name": customer.get("name"),
                     },
                 }
             )
             counts["missing_geogrid"] += 1
-        if feature and status == "inactive":
+        if geogrid_entry and status not in {"enabled", "active"}:
             issues.append(
                 {
                     "reconciliation_id": str(uuid4()),
                     "issue_type": "inactive_geogrid_resource",
                     "customer_id": customer_id,
                     "detail": {
-                        "message": "Cliente inactivo con feature en GeoGrid",
-                        "customer": customer_id,
-                        "feature_id": feature.get("id"),
+                        "message": "Cliente inactivo en ISP pero aún presente en GeoGrid",
+                        "customer_code": customer.get("code"),
+                        "geogrid_id": geogrid_entry.get("id"),
                     },
                 }
             )
             counts["inactive_geogrid_resource"] += 1
 
-        # SmartOLT presence
-        onu_entry = None
-        if onu_sn:
-            onu_entry = smartolt_by_sn.get(onu_sn)
-        if onu_entry is None and olt is not None and board is not None and pon is not None:
-            try:
-                key = (int(olt), int(board), int(pon))
-                onu_entry = smartolt_by_port.get(key)
-            except (TypeError, ValueError):
-                onu_entry = None
+        if geogrid_entry:
+            assignments = geogrid_entry.get("assignments") or []
+            customer_onu = str(customer.get("onu_sn") or "").strip().lower()
+            if customer_onu and assignments:
+                for assignment in assignments:
+                    onu_serial = str(assignment.get("onuSerial") or "").strip().lower()
+                    if onu_serial and onu_serial != customer_onu:
+                        issues.append(
+                            {
+                                "reconciliation_id": str(uuid4()),
+                                "issue_type": "geogrid_assignment_conflict",
+                                "customer_id": customer_id,
+                                "detail": {
+                                    "message": "Asignación de puerto con ONU distinta a la registrada en ISP",
+                                    "customer_code": customer.get("code"),
+                                    "expected_onu": customer.get("onu_sn"),
+                                    "geogrid_onu": assignment.get("onuSerial"),
+                                    "id_porta": assignment.get("idPorta"),
+                                },
+                            }
+                        )
+                        counts["geogrid_assignment_conflict"] += 1
 
-        if onu_entry is None and status == "active" and integration_enabled:
+            if (
+                integration_enabled
+                and status in {"enabled", "active"}
+                and customer.get("pon") is not None
+                and not assignments
+            ):
+                issues.append(
+                    {
+                        "reconciliation_id": str(uuid4()),
+                        "issue_type": "missing_geogrid_assignment",
+                        "customer_id": customer_id,
+                        "detail": {
+                            "message": "Cliente con datos de red sin asignación de puerto en GeoGrid",
+                            "customer_code": customer.get("code"),
+                            "geogrid_id": geogrid_entry.get("id"),
+                        },
+                    }
+                )
+                counts["missing_geogrid_assignment"] += 1
+
+    for cliente in geogrid_clientes:
+        codigo = str(cliente.get("codigoIntegracao") or "").strip().lower()
+        if not codigo:
+            continue
+        if codigo not in isp_by_code:
             issues.append(
                 {
                     "reconciliation_id": str(uuid4()),
-                    "issue_type": "missing_smartolt",
-                    "customer_id": customer_id,
-                    "detail": {
-                        "message": "Cliente activo sin ONU autorizada en SmartOLT",
-                        "customer": customer_id,
-                        "olt_id": olt,
-                        "board": board,
-                        "pon_port": pon,
-                        "onu_sn": customer.get("onu_sn"),
-                    },
-                }
-            )
-            counts["missing_smartolt"] += 1
-        if onu_entry is not None and status == "inactive":
-            issues.append(
-                {
-                    "reconciliation_id": str(uuid4()),
-                    "issue_type": "inactive_smartolt_resource",
-                    "customer_id": customer_id,
-                    "detail": {
-                        "message": "Cliente inactivo con ONU autorizada en SmartOLT",
-                        "customer": customer_id,
-                        "onu_id": onu_entry.get("onu_id"),
-                        "olt_id": onu_entry.get("olt_id"),
-                        "board": onu_entry.get("board"),
-                        "pon_port": onu_entry.get("pon_port"),
-                        "onu_sn": onu_entry.get("onu_sn"),
-                    },
-                }
-            )
-            counts["inactive_smartolt_resource"] += 1
-
-    # GeoGrid orphan features
-    for feature in geogrid_features:
-        attrs = feature.get("attrs") or {}
-        customer_ref = attrs.get("customer_id")
-        try:
-            cid = int(customer_ref)
-        except (TypeError, ValueError):
-            cid = None
-        if cid is None or cid not in isp_by_customer:
-            issues.append(
-                {
-                    "reconciliation_id": str(uuid4()),
-                    "issue_type": "orphan_geogrid_feature",
-                    "customer_id": cid,
-                    "detail": {
-                        "message": "Feature sin cliente correspondiente en ISP-Cube",
-                        "feature_id": feature.get("id"),
-                        "customer_id": customer_ref,
-                        "onu_sn": (attrs.get("onu_sn") if isinstance(attrs, dict) else None),
-                    },
-                }
-            )
-            counts["orphan_geogrid_feature"] += 1
-
-    # SmartOLT orphan ONUs
-    for onu in smartolt_onus:
-        onu_sn = str(onu.get("onu_sn") or "").strip().lower()
-        try:
-            key = (int(onu.get("olt_id")), int(onu.get("board")), int(onu.get("pon_port")))
-        except (TypeError, ValueError):
-            key = None
-
-        matched = False
-        if onu_sn and any(onu_sn == str((cust.get("onu_sn") or "")).strip().lower() for cust in isp_by_customer.values()):
-            matched = True
-        elif key:
-            matched = any(
-                (cust.get("olt_id"), cust.get("board"), cust.get("pon") or cust.get("pon_port")) == key
-                for cust in isp_by_customer.values()
-            )
-
-        if not matched:
-            issues.append(
-                {
-                    "reconciliation_id": str(uuid4()),
-                    "issue_type": "orphan_smartolt_onu",
+                    "issue_type": "orphan_geogrid_cliente",
                     "customer_id": None,
                     "detail": {
-                        "message": "ONU presente en SmartOLT sin cliente asociado en ISP-Cube",
-                        "onu_id": onu.get("onu_id"),
-                        "onu_sn": onu.get("onu_sn"),
-                        "olt_id": onu.get("olt_id"),
-                        "board": onu.get("board"),
-                        "pon_port": onu.get("pon_port"),
+                        "message": "Cliente presente en GeoGrid sin contraparte en ISP",
+                        "geogrid_id": cliente.get("id"),
+                        "codigo_integracao": cliente.get("codigoIntegracao"),
                     },
                 }
             )
-            counts["orphan_smartolt_onu"] += 1
+            counts["orphan_geogrid_cliente"] += 1
 
     summary_entry = {
         "reconciliation_id": str(uuid4()),
@@ -889,9 +771,8 @@ async def _run_reconciliation(settings: EnvConfig) -> Dict[str, Any]:
         "detail": {
             "counts": dict(counts),
             "totals": {
-                "isp_customers": len(isp_by_customer),
-                "geogrid_features": len(geogrid_features),
-                "smartolt_onus": len(smartolt_onus),
+                "isp_customers": len(isp_by_code),
+                "geogrid_clientes": len(geogrid_clientes),
             },
         },
     }
@@ -905,9 +786,8 @@ async def _run_reconciliation(settings: EnvConfig) -> Dict[str, Any]:
     return {
         "generated_at": timestamp,
         "totals": {
-            "isp_customers": len(isp_by_customer),
-            "geogrid_features": len(geogrid_features),
-            "smartolt_onus": len(smartolt_onus),
+            "isp_customers": len(isp_by_code),
+            "geogrid_clientes": len(geogrid_clientes),
         },
         "issues": issues,
         "issue_counts": dict(counts),
@@ -1187,43 +1067,8 @@ def _resolve_lookback_days(range_info: Dict[str, Any], candidate: Any) -> int:
 
 
 async def _seed_isp_customers(settings: EnvConfig) -> Dict[str, int]:
-    if not CUSTOMER_SEED_DATA:
-        return {"seeded": 0, "skipped": 0}
-    client_kwargs, region = settings.http_client_kwargs("isp")
-    seeded = 0
-    skipped = 0
-    async with httpx.AsyncClient(**client_kwargs) as client:
-        for entry in CUSTOMER_SEED_DATA:
-            customer_id = entry.get("customer_id")
-            try:
-                resp = await client.post("/customers", json=entry)
-            except httpx.HTTPError as exc:
-                logger.warning(
-                    "Failed to seed customer %s in region %s: %s",
-                    customer_id,
-                    region,
-                    exc,
-                )
-                continue
-            if resp.status_code == status.HTTP_201_CREATED:
-                seeded += 1
-            elif resp.status_code == status.HTTP_409_CONFLICT:
-                skipped += 1
-            else:
-                logger.warning(
-                    "Unexpected status seeding customer %s: %s %s",
-                    customer_id,
-                    resp.status_code,
-                    resp.text,
-                )
-    if seeded or skipped:
-        logger.info(
-            "Customer seed applied to ISP mock (region=%s): %s seeded, %s skipped",
-            region,
-            seeded,
-            skipped,
-        )
-    return {"seeded": seeded, "skipped": skipped}
+    # Los clientes demo ya están embebidos en el mock de ISP-Cube.
+    return {"seeded": 0, "skipped": 0}
 
 
 async def _ensure_customer_seed(settings: EnvConfig) -> None:
@@ -1509,7 +1354,14 @@ def register_customer_event(
     if not customer_name and metadata:
         customer_name = metadata.get("customer_name")
     lat_value = _safe_float(lat if lat is not None else customer.get("lat") if customer else None)
-    lon_value = _safe_float(lon if lon is not None else customer.get("lon") if customer else None)
+    lon_source = None
+    if lon is not None:
+        lon_source = lon
+    elif customer:
+        lon_source = customer.get("lon")
+        if lon_source is None:
+            lon_source = customer.get("lng")
+    lon_value = _safe_float(lon_source)
     if lat_value is None and previous_event is not None:
         lat_value = _safe_float(previous_event.get("lat"))
     if lon_value is None and previous_event is not None:
@@ -1865,8 +1717,12 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
         )
 
     try:
-        lat = float(customer.get("lat"))
-        lon = float(customer.get("lon"))
+        lat_raw = customer.get("lat")
+        lon_raw = customer.get("lon")
+        if lon_raw is None:
+            lon_raw = customer.get("lng")
+        lat = float(lat_raw)
+        lon = float(lon_raw)
     except (TypeError, ValueError):
         record_incident(
             "invalid_coordinates",
@@ -1874,7 +1730,7 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
                 "customer_id": customer_id,
                 "action": action,
                 "lat": customer.get("lat"),
-                "lon": customer.get("lon"),
+                "lon": customer.get("lon") or customer.get("lng"),
                 "reason": "non_numeric",
             },
         )
@@ -1884,7 +1740,7 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
                 "message": "Customer coordinates are invalid",
                 "customer_id": customer_id,
                 "lat": customer.get("lat"),
-                "lon": customer.get("lon"),
+                "lon": customer.get("lon") or customer.get("lng"),
                 "reason": "non_numeric",
             },
         )
@@ -1984,6 +1840,72 @@ def ensure_alignment(customer: Dict[str, Any], payload: ProvisionRequest) -> Non
                 "mismatches": mismatches,
             },
         )
+
+
+def _customer_zone(customer: Dict[str, Any]) -> str:
+    zone = customer.get("zone")
+    if isinstance(zone, str) and zone.strip():
+        return zone.strip()
+    city = customer.get("city")
+    if isinstance(city, dict):
+        name = city.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return DEFAULT_ZONE_LABEL
+
+
+def _customer_city(customer: Dict[str, Any]) -> str:
+    city = customer.get("city")
+    if isinstance(city, dict):
+        name = city.get("name")
+        if isinstance(name, str):
+            return name
+    if isinstance(city, str):
+        return city
+    return ""
+
+
+def _customer_state(customer: Dict[str, Any]) -> str:
+    city = customer.get("city")
+    if isinstance(city, dict):
+        province = city.get("province") or city.get("state")
+        if isinstance(province, str):
+            return province
+    return ""
+
+
+def _customer_coordinates(customer: Dict[str, Any]) -> Tuple[float, float]:
+    lat = float(customer.get("lat"))
+    lon_raw = customer.get("lon")
+    if lon_raw is None:
+        lon_raw = customer.get("lng")
+    lon = float(lon_raw)
+    return lat, lon
+
+
+def _build_geogrid_cliente_payload(customer: Dict[str, Any]) -> Dict[str, Any]:
+    lat, lon = _customer_coordinates(customer)
+    codigo = str(customer.get("code") or customer.get("customer_id") or "").strip()
+    if not codigo:
+        codigo = f"customer-{customer.get('customer_id', 'unknown')}"
+    nombre = str(customer.get("name") or codigo)
+    observaciones: List[str] = []
+    zone = _customer_zone(customer)
+    if zone:
+        observaciones.append(f"Zona: {zone}")
+    if customer.get("onu_sn"):
+        observaciones.append(f"ONU: {customer.get('onu_sn')}")
+    observacion = " | ".join(observaciones) if observaciones else None
+    return {
+        "codigoIntegracao": codigo,
+        "nome": nombre,
+        "endereco": customer.get("address") or "",
+        "cidade": _customer_city(customer) or zone,
+        "estado": _customer_state(customer) or "NA",
+        "latitude": lat,
+        "longitude": lon,
+        "observacao": observacion,
+    }
 
 
 def ensure_customer_inactive(customer: Dict[str, Any]) -> None:
@@ -2216,135 +2138,36 @@ async def sync_customer(
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     try:
-        isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
-        async with httpx.AsyncClient(**isp_client_kwargs) as client:
-            customer = await fetch_json(
-                client,
-                "GET",
-                f"/customers/{payload.customer_id}",
-                service="isp",
-                settings=settings,
-                region_name=isp_region,
-            )
-
+        customer = await isp_service.get_customer(
+            settings, payload.customer_id, fetch_json
+        )
         ensure_customer_ready(customer, action="sync")
 
-        feature_payload = {
-            "name": f"{customer['customer_id']} _ {customer['name']}",
-            "location": {"lat": customer["lat"], "lon": customer["lon"]},
-            "attrs": {
-                "customer_id": customer["customer_id"],
-                "address": customer["address"],
-                "city": customer["city"],
-                "odb": customer["odb"],
-                "olt_id": customer["olt_id"],
-                "board": customer["board"],
-                "pon": customer["pon"],
-                "onu_sn": customer["onu_sn"],
-            },
-        }
+        cliente_payload = _build_geogrid_cliente_payload(customer)
+        geogrid_id, action = await geogrid_service.upsert_cliente(
+            settings, cliente_payload, fetch_json
+        )
+        SYNC_COUNTER.labels(result=action).inc()
+        resolve_incidents(
+            customer_id=payload.customer_id,
+            action="sync",
+            resolved_by=user,
+            reason=f"sync_{action}",
+        )
+        result = {"geogrid_id": geogrid_id, "action": action}
 
-        geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
-        async with httpx.AsyncClient(**geogrid_client_kwargs) as client:
-            response = await client.post("/features", json=feature_payload)
-            logger.info(
-                "HTTP POST %s/features -> %s",
-                geogrid_client_kwargs["base_url"],
-                response.status_code,
+        record_audit(
+            AuditEntry(
+                action="sync",
+                customer_id=payload.customer_id,
+                user=user,
+                dry_run=False,
+                status="success",
+                detail=result,
+                timestamp=timestamp,
             )
-            if response.status_code == status.HTTP_201_CREATED:
-                feature_id = response.json()["id"]
-                SYNC_COUNTER.labels(result="created").inc()
-                result = {"feature_id": feature_id, "action": "created"}
-                resolved = resolve_incidents(
-                    customer_id=payload.customer_id,
-                    action="sync",
-                    resolved_by=user,
-                    reason="sync_created",
-                )
-                if resolved:
-                    logger.info(
-                        "Resolved incidents for customer %s during sync: %s",
-                        payload.customer_id,
-                        [entry.get("kind") for entry in resolved],
-                    )
-                record_audit(
-                    AuditEntry(
-                        action="sync",
-                        customer_id=payload.customer_id,
-                        user=user,
-                        dry_run=False,
-                        status="success",
-                        detail=result,
-                        timestamp=timestamp,
-                    )
-                )
-                return result
-            if response.status_code == status.HTTP_409_CONFLICT:
-                data = response.json()
-                # FastAPI wraps HTTPException detail inside {"detail": {...}}
-                feature_detail = data.get("detail", data)
-                feature_id = (
-                    feature_detail.get("id")
-                    if isinstance(feature_detail, dict)
-                    else None
-                )
-                if not feature_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail={"error": "GeoGrid conflict without feature id"},
-                    )
-                update_resp = await client.put(f"/features/{feature_id}", json=feature_payload)
-                logger.info(
-                    "HTTP PUT %s/features/%s -> %s",
-                    settings.geogrid_base_url,
-                    feature_id,
-                    update_resp.status_code,
-                )
-                if update_resp.status_code not in {
-                    status.HTTP_200_OK,
-                    status.HTTP_204_NO_CONTENT,
-                }:
-                    try:
-                        detail = update_resp.json()
-                    except ValueError:
-                        detail = update_resp.text
-                    raise HTTPException(
-                        status_code=update_resp.status_code,
-                        detail={"upstream_detail": detail},
-                )
-                SYNC_COUNTER.labels(result="updated").inc()
-                result = {"feature_id": feature_id, "action": "updated"}
-                resolved = resolve_incidents(
-                    customer_id=payload.customer_id,
-                    action="sync",
-                    resolved_by=user,
-                    reason="sync_updated",
-                )
-                if resolved:
-                    logger.info(
-                        "Resolved incidents for customer %s during sync: %s",
-                        payload.customer_id,
-                        [entry.get("kind") for entry in resolved],
-                    )
-                record_audit(
-                    AuditEntry(
-                        action="sync",
-                        customer_id=payload.customer_id,
-                        user=user,
-                        dry_run=False,
-                        status="success",
-                        detail=result,
-                        timestamp=timestamp,
-                    )
-                )
-                return result
-
-        try:
-            detail = response.json()
-        except ValueError:
-            detail = response.text
-        raise HTTPException(status_code=response.status_code, detail=detail)
+        )
+        return result
     except HTTPException as exc:
         SYNC_COUNTER.labels(result="error").inc()
         record_audit(
@@ -2383,7 +2206,7 @@ async def sync_customer(
 @app.post(
     "/provision/onu",
     status_code=status.HTTP_200_OK,
-    summary="Authorize an ONU on SmartOLT",
+    summary="Asignar un cliente a una puerta en GeoGrid",
 )
 async def provision_onu(
     payload: ProvisionRequest,
@@ -2394,32 +2217,38 @@ async def provision_onu(
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
+
+    if payload.customer_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "customer_id es obligatorio para provisionar"},
+        )
+
     try:
-        customer: Optional[Dict[str, Any]] = None
-        if payload.customer_id is not None:
-            isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
-            async with httpx.AsyncClient(**isp_client_kwargs) as client:
-                customer = await fetch_json(
-                    client,
-                    "GET",
-                    f"/customers/{payload.customer_id}",
-                    service="isp",
-                    settings=settings,
-                    region_name=isp_region,
-                )
-            ensure_customer_ready(customer, action="provision")
-            ensure_alignment(customer, payload)
+        customer = await isp_service.get_customer(
+            settings, payload.customer_id, fetch_json
+        )
+        ensure_customer_ready(customer, action="provision")
+        ensure_alignment(customer, payload)
+        cliente_payload = _build_geogrid_cliente_payload(customer)
+        geogrid_id, geogrid_action = await geogrid_service.upsert_cliente(
+            settings, cliente_payload, fetch_json
+        )
+        if geogrid_action in {"created", "updated"}:
+            resolve_incidents(
+                customer_id=payload.customer_id,
+                action="sync",
+                resolved_by=user,
+                reason=f"sync_{geogrid_action}",
+            )
 
         if dry_run_flag:
-            logger.info(
-                "Dry-run enabled, skipping SmartOLT provisioning for ONU %s",
-                payload.onu_sn,
-            )
             PROVISION_COUNTER.labels(result="dry_run").inc()
-            result = {
+            detail = {
                 "dry_run": True,
                 "status": "skipped",
-                "message": "SmartOLT provisioning skipped because dry-run is enabled",
+                "message": "Asignación en GeoGrid omitida por dry-run",
+                "geogrid_id": geogrid_id,
             }
             record_audit(
                 AuditEntry(
@@ -2428,257 +2257,46 @@ async def provision_onu(
                     user=user,
                     dry_run=True,
                     status="success",
-                    detail=result,
+                    detail=detail,
                     timestamp=timestamp,
                 )
             )
-            return result
+            return detail
 
-        request_body = payload.model_dump(exclude={"dry_run", "customer_id"})
-
-        verification_params = {
-            "olt_id": payload.olt_id,
-            "onu_sn": payload.onu_sn,
+        port_identifier = f"OLT{payload.olt_id}-B{payload.board}-P{payload.pon_port}"
+        assignment_payload = {
+            "idCliente": geogrid_id,
+            "idPorta": port_identifier,
+            "oltId": payload.olt_id,
+            "board": payload.board,
+            "pon": payload.pon_port,
+            "onuSerial": payload.onu_sn,
+            "observacao": f"Asignado por {user} en {timestamp}",
         }
 
-        smartolt_client_kwargs, smartolt_region = settings.http_client_kwargs("smartolt")
-        async with httpx.AsyncClient(**smartolt_client_kwargs) as client:
-            try:
-                current = await fetch_json(
-                    client,
-                    "GET",
-                    "/onus",
-                    params=verification_params,
-                    service="smartolt",
-                    settings=settings,
-                    region_name=smartolt_region,
-                )
-            except HTTPException as exc:
-                if exc.status_code not in {status.HTTP_404_NOT_FOUND, status.HTTP_204_NO_CONTENT}:
-                    raise
-                current = {"onus": []}
-
-            existing_onus = current.get("onus", []) if isinstance(current, dict) else []
-            if existing_onus:
-                logger.info(
-                    "ONU %s already authorized (id=%s)",
-                    payload.onu_sn,
-                    existing_onus[0].get("onu_id"),
-                )
-                PROVISION_COUNTER.labels(result="already_authorized").inc()
-                result = {
-                    "dry_run": False,
-                    "status": "already_authorized",
-                    "authorization": existing_onus[0],
-                    "verification": current,
-                }
-                resolved_entries: List[Dict[str, Any]] = []
-                if payload.customer_id is not None:
-                    resolved_entries.extend(
-                        resolve_incidents(
-                            customer_id=payload.customer_id,
-                            action="provision",
-                            resolved_by=user,
-                            reason=result["status"],
-                        )
-                    )
-                    resolved_entries.extend(
-                        resolve_incidents(
-                            customer_id=payload.customer_id,
-                            kinds={"hardware_mismatch", "hardware_port_conflict"},
-                            resolved_by=user,
-                            reason=result["status"],
-                        )
-                    )
-                if resolved_entries:
-                    logger.info(
-                        "Resolved incidents for customer %s during provision: %s",
-                        payload.customer_id,
-                        [entry.get("kind") for entry in resolved_entries],
-                    )
-                record_audit(
-                    AuditEntry(
-                        action="provision",
-                        customer_id=payload.customer_id,
-                        user=user,
-                        dry_run=False,
-                        status="success",
-                        detail=result,
-                        timestamp=timestamp,
-                    )
-                    )
-                return result
-
-            # Validate that the requested PON slot is not already assigned to another ONU
-            port_conflict_onu: Optional[Dict[str, Any]] = None
-            try:
-                same_olt_onus = await fetch_json(
-                    client,
-                    "GET",
-                    "/onus",
-                    params={"olt_id": payload.olt_id},
-                    service="smartolt",
-                    settings=settings,
-                    region_name=smartolt_region,
-                )
-            except HTTPException as exc:
-                if exc.status_code not in {status.HTTP_404_NOT_FOUND, status.HTTP_204_NO_CONTENT}:
-                    raise
-                same_olt_onus = {"onus": []}
-
-            candidate_onus = same_olt_onus.get("onus", []) if isinstance(same_olt_onus, dict) else []
-            requested_sn = payload.onu_sn.lower()
-            for onu in candidate_onus:
-                if (
-                    onu.get("board") == payload.board
-                    and onu.get("pon_port") == payload.pon_port
-                    and str(onu.get("onu_sn", "")).lower() != requested_sn
-                ):
-                    port_conflict_onu = onu
-                    break
-
-            if port_conflict_onu:
+        try:
+            assignment_result = await geogrid_service.assign_port(
+                settings, assignment_payload
+            )
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_409_CONFLICT:
                 record_incident(
-                    "hardware_port_conflict",
+                    "geogrid_assignment_conflict",
                     {
                         "customer_id": payload.customer_id,
-                        "olt_id": payload.olt_id,
-                        "board": payload.board,
-                        "pon_port": payload.pon_port,
-                        "requested_onu_sn": payload.onu_sn,
-                        "existing_onu_sn": port_conflict_onu.get("onu_sn"),
-                        "existing_onu_id": port_conflict_onu.get("onu_id"),
+                        "request": assignment_payload,
+                        "detail": exc.detail,
                     },
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail={
-                        "message": "PON port already in use by another ONU",
-                        "olt_id": payload.olt_id,
-                        "board": payload.board,
-                        "pon_port": payload.pon_port,
-                        "existing_onu": port_conflict_onu,
-                    },
-                )
+            raise
 
-            auth_resp = await client.post("/onu/authorize", json=request_body)
-            logger.info(
-                "HTTP POST %s/onu/authorize -> %s",
-                smartolt_client_kwargs["base_url"],
-                auth_resp.status_code,
-            )
-            if auth_resp.status_code == status.HTTP_409_CONFLICT:
-                detail = auth_resp.json()
-                logger.info(
-                    "SmartOLT returned 409 for ONU %s (id=%s)",
-                    payload.onu_sn,
-                    detail.get("onu_id"),
-                )
-                verification = await fetch_json(
-                    client,
-                    "GET",
-                    "/onus",
-                    params=verification_params,
-                    service="smartolt",
-                    settings=settings,
-                    region_name=smartolt_region,
-                )
-                PROVISION_COUNTER.labels(result="already_authorized").inc()
-                result = {
-                    "dry_run": False,
-                    "status": "already_authorized",
-                    "authorization": detail,
-                    "verification": verification,
-                }
-                resolved_entries: List[Dict[str, Any]] = []
-                if payload.customer_id is not None:
-                    resolved_entries.extend(
-                        resolve_incidents(
-                            customer_id=payload.customer_id,
-                            action="provision",
-                            resolved_by=user,
-                            reason=result["status"],
-                        )
-                    )
-                    resolved_entries.extend(
-                        resolve_incidents(
-                            customer_id=payload.customer_id,
-                            kinds={"hardware_mismatch", "hardware_port_conflict"},
-                            resolved_by=user,
-                            reason=result["status"],
-                        )
-                    )
-                if resolved_entries:
-                    logger.info(
-                        "Resolved incidents for customer %s during provision: %s",
-                        payload.customer_id,
-                        [entry.get("kind") for entry in resolved_entries],
-                    )
-                record_audit(
-                    AuditEntry(
-                        action="provision",
-                        customer_id=payload.customer_id,
-                        user=user,
-                        dry_run=False,
-                        status="success",
-                        detail=result,
-                        timestamp=timestamp,
-                    )
-                )
-                return result
-
-            if auth_resp.status_code != status.HTTP_200_OK:
-                try:
-                    detail = auth_resp.json()
-                except ValueError:
-                    detail = auth_resp.text
-                raise HTTPException(
-                    status_code=auth_resp.status_code,
-                    detail={"upstream_detail": detail},
-                )
-
-            verification = await fetch_json(
-                client,
-                "GET",
-                "/onus",
-                params=verification_params,
-                service="smartolt",
-                settings=settings,
-                region_name=smartolt_region,
-            )
-            authorization = auth_resp.json()
-
-        PROVISION_COUNTER.labels(result="authorized").inc()
-        result = {
-            "dry_run": False,
-            "status": "authorized",
-            "authorization": authorization,
-            "verification": verification,
-        }
-        resolved_entries: List[Dict[str, Any]] = []
-        if payload.customer_id is not None:
-            resolved_entries.extend(
-                resolve_incidents(
-                    customer_id=payload.customer_id,
-                    action="provision",
-                    resolved_by=user,
-                    reason=result["status"],
-                )
-            )
-            resolved_entries.extend(
-                resolve_incidents(
-                    customer_id=payload.customer_id,
-                    kinds={"hardware_mismatch", "hardware_port_conflict"},
-                    resolved_by=user,
-                    reason=result["status"],
-                )
-            )
-        if resolved_entries:
-            logger.info(
-                "Resolved incidents for customer %s during provision: %s",
-                payload.customer_id,
-                [entry.get("kind") for entry in resolved_entries],
-            )
+        PROVISION_COUNTER.labels(result="assigned").inc()
+        resolve_incidents(
+            customer_id=payload.customer_id,
+            action="provision",
+            resolved_by=user,
+            reason="assigned",
+        )
         record_audit(
             AuditEntry(
                 action="provision",
@@ -2686,21 +2304,28 @@ async def provision_onu(
                 user=user,
                 dry_run=False,
                 status="success",
-                detail=result,
+                detail={
+                    "geogrid_id": geogrid_id,
+                    "assignment": assignment_result,
+                },
                 timestamp=timestamp,
             )
         )
-        if customer:
-            register_customer_event(
-                "alta",
-                customer=customer,
-                source="runtime",
-                metadata={
-                    "trigger": "provision",
-                    "status": result.get("status"),
-                },
-            )
-        return result
+        register_customer_event(
+            "alta",
+            customer=customer,
+            source="runtime",
+            metadata={
+                "trigger": "provision",
+                "geogrid_id": geogrid_id,
+                "port": port_identifier,
+            },
+        )
+        return {
+            "status": "assigned",
+            "geogrid_id": geogrid_id,
+            "assignment": assignment_result,
+        }
     except HTTPException as exc:
         PROVISION_COUNTER.labels(result="error").inc()
         record_audit(
@@ -2732,14 +2357,14 @@ async def provision_onu(
                 timestamp=timestamp,
             )
         )
-        logger.exception("Unhandled error during ONU provisioning")
+        logger.exception("Unhandled error during provisioning")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
 
 @app.post(
     "/decommission/customer",
     status_code=status.HTTP_200_OK,
-    summary="Deactivate customer across GeoGrid and SmartOLT",
+    summary="Desasignar un cliente en GeoGrid",
 )
 async def decommission_customer(
     payload: DecommissionRequest,
@@ -2750,89 +2375,44 @@ async def decommission_customer(
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
-    try:
-        isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
-        async with httpx.AsyncClient(**isp_client_kwargs) as client:
-            customer = await fetch_json(
-                client,
-                "GET",
-                f"/customers/{payload.customer_id}",
-                service="isp",
-                settings=settings,
-                region_name=isp_region,
-            )
 
+    try:
+        customer = await isp_service.get_customer(
+            settings, payload.customer_id, fetch_json
+        )
         ensure_customer_inactive(customer)
         ensure_customer_has_network_keys(customer, action="decommission")
 
-        feature: Optional[Dict[str, Any]] = None
-        geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
-        async with httpx.AsyncClient(**geogrid_client_kwargs) as geogrid_client:
-            try:
-                feature = await fetch_json(
-                    geogrid_client,
-                    "GET",
-                    "/features/search",
-                    params={"customer_id": payload.customer_id},
-                    service="geogrid",
-                    settings=settings,
-                    region_name=geogrid_region,
-                )
-            except HTTPException as exc:
-                if exc.status_code == status.HTTP_404_NOT_FOUND:
-                    feature = None
-                else:
-                    raise
-
-            if feature is None:
-                try:
-                    feature = await fetch_json(
-                        geogrid_client,
-                        "GET",
-                        "/features/search",
-                        params={"onu_sn": customer["onu_sn"]},
-                        service="geogrid",
-                        settings=settings,
-                        region_name=geogrid_region,
-                    )
-                except HTTPException as exc:
-                    if exc.status_code != status.HTTP_404_NOT_FOUND:
-                        raise
-                    feature = None
-
-        feature_missing = feature is None
-
-        smartolt_client_kwargs, smartolt_region = settings.http_client_kwargs("smartolt")
-        async with httpx.AsyncClient(**smartolt_client_kwargs) as smart_client:
-            params = {
-                "olt_id": customer["olt_id"],
-                "onu_sn": customer["onu_sn"],
-            }
-            onus_data = await fetch_json(
-                smart_client,
-                "GET",
-                "/onus",
-                params=params,
-                service="smartolt",
-                settings=settings,
-                region_name=smartolt_region,
+        codigo_integracion = str(customer.get("code") or customer.get("customer_id"))
+        geogrid_cliente = await geogrid_service.get_cliente_by_codigo(
+            settings, codigo_integracion, fetch_json
+        )
+        if not geogrid_cliente:
+            record_incident(
+                "decommission_missing_feature",
+                {
+                    "customer_id": payload.customer_id,
+                    "customer_code": codigo_integracion,
+                },
             )
-            existing_onus = onus_data.get("onus", []) if isinstance(onus_data, dict) else []
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "message": "GeoGrid no tiene registro para el cliente",
+                    "customer_code": codigo_integracion,
+                },
+            )
 
-        onu_missing = not existing_onus
+        geogrid_id = geogrid_cliente.get("id")
+        port_identifier = f"OLT{customer['olt_id']}-B{customer['board']}-P{customer['pon']}"
 
         if dry_run_flag:
             DECOMMISSION_COUNTER.labels(result="dry_run").inc()
-            result = {
+            detail = {
                 "dry_run": True,
-                "feature": {
-                    "found": not feature_missing,
-                    "feature_id": feature["id"] if feature else None,
-                },
-                "onu": {
-                    "found": not onu_missing,
-                    "onu_ids": [onu["onu_id"] for onu in existing_onus],
-                },
+                "status": "skipped",
+                "geogrid_id": geogrid_id,
+                "port": port_identifier,
             }
             record_audit(
                 AuditEntry(
@@ -2841,99 +2421,33 @@ async def decommission_customer(
                     user=user,
                     dry_run=True,
                     status="success",
-                    detail=result,
+                    detail=detail,
                     timestamp=timestamp,
                 )
             )
-            return result
+            return detail
 
-        geogrid_result = "already_absent" if feature_missing else "not_found"
-        if feature:
-            geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
-            async with httpx.AsyncClient(**geogrid_client_kwargs) as geogrid_client:
-                resp = await geogrid_client.delete(f"/features/{feature['id']}")
-                logger.info(
-                    "HTTP DELETE %s/features/%s -> %s",
-                    geogrid_client_kwargs["base_url"],
-                    feature["id"],
-                    resp.status_code,
-                )
-                if resp.status_code not in {status.HTTP_204_NO_CONTENT, status.HTTP_200_OK}:
-                    try:
-                        detail = resp.json()
-                    except ValueError:
-                        detail = resp.text
-                    raise HTTPException(
-                        status_code=resp.status_code,
-                        detail={"upstream_detail": detail},
-                    )
-                geogrid_result = "deleted"
-
-        smartolt_result = "not_found"
-        if existing_onus:
-            onu = existing_onus[0]
-            smartolt_client_kwargs, smartolt_region = settings.http_client_kwargs("smartolt")
-            async with httpx.AsyncClient(**smartolt_client_kwargs) as smart_client:
-                delete_resp = await smart_client.delete(
-                    "/onus",
-                    params={
-                        "olt_id": onu["olt_id"],
-                        "board": onu["board"],
-                        "pon_port": onu["pon_port"],
-                        "onu_sn": onu["onu_sn"],
+        try:
+            await geogrid_service.remove_assignment(settings, port_identifier, geogrid_id)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_404_NOT_FOUND:
+                record_incident(
+                    "decommission_missing_feature",
+                    {
+                        "customer_id": payload.customer_id,
+                        "geogrid_id": geogrid_id,
+                        "port": port_identifier,
                     },
                 )
-                logger.info(
-                    "HTTP DELETE %s/onus -> %s",
-                    smartolt_client_kwargs["base_url"],
-                    delete_resp.status_code,
-                )
-                if delete_resp.status_code != status.HTTP_200_OK:
-                    try:
-                        detail = delete_resp.json()
-                    except ValueError:
-                        detail = delete_resp.text
-                    raise HTTPException(
-                        status_code=delete_resp.status_code,
-                        detail={"upstream_detail": detail},
-                )
-                smartolt_result = "deleted"
-        else:
-            smartolt_result = "already_absent"
+            raise
 
-        DECOMMISSION_COUNTER.labels(result="completed").inc()
-        result = {
-            "dry_run": False,
-            "feature": {"status": geogrid_result},
-            "onu": {"status": smartolt_result},
-        }
-        resolved_entries: List[Dict[str, Any]] = []
-        resolved_entries.extend(
-            resolve_incidents(
-                customer_id=payload.customer_id,
-                action="decommission",
-                resolved_by=user,
-                reason="decommission_completed",
-            )
+        DECOMMISSION_COUNTER.labels(result="removed").inc()
+        resolve_incidents(
+            customer_id=payload.customer_id,
+            action="decommission",
+            resolved_by=user,
+            reason="removed",
         )
-        resolved_entries.extend(
-            resolve_incidents(
-                customer_id=payload.customer_id,
-                kinds={
-                    "decommission_missing_feature",
-                    "decommission_missing_onu",
-                    "decommission_status_active",
-                },
-                resolved_by=user,
-                reason="decommission_completed",
-            )
-        )
-        if resolved_entries:
-            logger.info(
-                "Resolved incidents for customer %s during decommission: %s",
-                payload.customer_id,
-                [entry.get("kind") for entry in resolved_entries],
-            )
         record_audit(
             AuditEntry(
                 action="decommission",
@@ -2941,22 +2455,28 @@ async def decommission_customer(
                 user=user,
                 dry_run=False,
                 status="success",
-                detail=result,
+                detail={
+                    "geogrid_id": geogrid_id,
+                    "port": port_identifier,
+                },
                 timestamp=timestamp,
             )
         )
-        if customer:
-            register_customer_event(
-                "baja",
-                customer=customer,
-                source="runtime",
-                metadata={
-                    "trigger": "decommission",
-                    "feature_status": geogrid_result,
-                    "onu_status": smartolt_result,
-                },
-            )
-        return result
+        register_customer_event(
+            "baja",
+            customer=customer,
+            source="runtime",
+            metadata={
+                "trigger": "decommission",
+                "geogrid_id": geogrid_id,
+                "port": port_identifier,
+            },
+        )
+        return {
+            "status": "removed",
+            "geogrid_id": geogrid_id,
+            "port": port_identifier,
+        }
     except HTTPException as exc:
         DECOMMISSION_COUNTER.labels(result="error").inc()
         record_audit(
@@ -2988,48 +2508,8 @@ async def decommission_customer(
                 timestamp=timestamp,
             )
         )
-        logger.exception("Unhandled error during customer decommission")
+        logger.exception("Unhandled error during decommission")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
-
-
-@app.get(
-    "/clients.geojson",
-    summary="Return GeoJSON FeatureCollection from GeoGrid",
-)
-async def clients_geojson(settings: EnvConfig = Depends(get_settings)) -> Dict[str, Any]:
-    geogrid_client_kwargs, geogrid_region = settings.http_client_kwargs("geogrid")
-    async with httpx.AsyncClient(**geogrid_client_kwargs) as client:
-        features = await fetch_json(
-            client,
-            "GET",
-            "/features",
-            service="geogrid",
-            settings=settings,
-            region_name=geogrid_region,
-        )
-
-    collection = {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "id": feature["id"],
-                "properties": {
-                    "name": feature["name"],
-                    **feature.get("attrs", {}),
-                },
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [
-                        feature["location"]["lon"],
-                        feature["location"]["lat"],
-                    ],
-                },
-            }
-            for feature in features
-        ],
-    }
-    return collection
 
 
 @app.get("/config", summary="Inspect orchestrator runtime configuration")
@@ -3056,10 +2536,9 @@ async def get_config(
         "environment": settings.env_name,
         "dry_run": state.dry_run,
         "services": services_snapshot,
-        "endpoints": {  # Legacy shape for backward compatibility
+        "endpoints": {
             "isp_base_url": settings.isp_base_url,
             "geogrid_base_url": settings.geogrid_base_url,
-            "smartolt_base_url": settings.smartolt_base_url,
         },
     }
 
@@ -3089,7 +2568,7 @@ async def update_config(
 )
 async def reset_mocks(settings: EnvConfig = Depends(get_settings)) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
-    for service_name in ("isp", "geogrid", "smartolt"):
+    for service_name in ("isp", "geogrid"):
         client_kwargs, region = settings.http_client_kwargs(service_name)
         async with httpx.AsyncClient(**client_kwargs) as client:
             try:

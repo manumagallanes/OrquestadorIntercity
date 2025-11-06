@@ -1,12 +1,12 @@
 # Orquestador Intercity – Documentación Técnica
 
-Este repositorio reúne un entorno autocontenido para reproducir la integración entre ISP-Cube, GeoGrid y SmartOLT mediante un orquestador escrito en FastAPI. El propósito central es disponer de un laboratorio controlado que permita comprender la arquitectura, validar comportamientos y preparar despliegues hacia entornos reales sin depender de sistemas productivos.
+Este repositorio reúne un entorno autocontenido para reproducir la integración entre ISP-Cube y GeoGrid mediante un orquestador escrito en FastAPI. El propósito central es disponer de un laboratorio controlado que permita comprender la arquitectura, validar comportamientos y preparar despliegues hacia entornos reales sin depender de sistemas productivos.
 
 ---
 
 ## 1. Introducción
 
-El orquestador coordina tres dominios: catálogo de clientes (ISP-Cube), plataforma geoespacial (GeoGrid) y autorización de ONUs (SmartOLT). Cada operación se valida de forma previa, se registra en auditoría, expone métricas y produce incidentes cuando un flujo no puede concluirse. El ecosistema completo se empaqueta con Docker Compose e incluye mocks funcionales, panel de monitoreo y una interfaz Streamlit para operar sin requerir herramientas adicionales.
+El orquestador coordina dos dominios complementarios: el catálogo de clientes (ISP-Cube) y la plataforma geoespacial (GeoGrid), donde se registran ubicaciones y se administran asignaciones de puertos. Cada operación se valida de forma previa, se registra en auditoría, expone métricas y produce incidentes cuando un flujo no puede concluirse. El ecosistema completo se empaqueta con Docker Compose e incluye mocks funcionales, panel de monitoreo y una interfaz Streamlit para operar sin requerir herramientas adicionales.
 
 Este documento presenta la fundamentación conceptual, la arquitectura técnica, los flujos principales, las opciones de configuración y las pautas operativas para que una persona ajena al proyecto pueda utilizarlo con criterio.
 
@@ -36,8 +36,7 @@ Las integraciones utilizan clientes HTTP asíncronos, reintentos con backoff exp
 |------------------|:------:|---------------------------------------------------------------------------------------|
 | `orchestrator`   |  8000  | API FastAPI que implementa la lógica de negocio, expone endpoints REST y métricas.   |
 | `isp-mock`       |  8001  | Mock de ISP-Cube con catálogo de clientes en memoria y soporte para flags de integración. |
-| `geogrid-mock`   |  8002  | Mock de GeoGrid que almacena features GeoJSON y permite altas, actualizaciones y consultas. |
-| `smartolt-mock`  |  8003  | Mock de SmartOLT orientado a autorizar ONUs y simular códigos de error.              |
+| `geogrid-mock`   |  8002  | Mock de GeoGrid que gestiona clientes, coordenadas y asignaciones de puertos PON.  |
 | `prometheus`     |  9090  | Servicio de métricas que consume el endpoint `/metrics` del orquestador.             |
 | `grafana`        |  3000  | Dashboards preconfigurados para visualizar flujos, incidentes y latencias.          |
 | `ui`             |  8501  | Interfaz Streamlit para operar sobre la API y los mocks sin necesidad de `curl`.    |
@@ -70,8 +69,8 @@ El campo `default_region` determina la región activa cuando no se indica otra e
 ### 4.2 Variables de entorno disponibles
 
 - `ORCHESTRATOR_ENV`: selecciona el archivo de configuración a cargar (`dev` por defecto).
-- `ISP_REGION`, `GEOGRID_REGION`, `SMARTOLT_REGION`: sustituyen la región por defecto de cada servicio.
-- `ISP_BASE_URL`, `GEOGRID_BASE_URL`, `SMARTOLT_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON.
+- `ISP_REGION`, `GEOGRID_REGION`: sustituyen la región por defecto de cada servicio.
+- `ISP_BASE_URL`, `GEOGRID_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON.
 - `DRY_RUN`: fuerza el valor inicial del flag global `dry_run` (interpreta `true/false`, `1/0` o equivalentes).
 - Cualquier valor declarado como `env:VARIABLE` en los JSON debe definirse en el entorno del proceso antes de iniciar el orquestador.
 
@@ -79,7 +78,7 @@ El endpoint `GET /config` expone la configuración efectiva con las sustitucione
 
 ### 4.3 Dataset inicial de clientes
 
-El archivo `config/seeds/customers.json` define un conjunto base de clientes (IDs 202, 912, 404, 707, 808) que reflejan los casos de uso documentados: clientes listos para automatizar, con flag deshabilitado, con datos incompletos y en estado inactivo. El orquestador los sincroniza automáticamente con el mock de ISP-Cube durante el arranque y cada vez que se ejecuta `POST /reset`, de modo que las pruebas y dashboards partan de una base consistente sin necesidad de cargar datos manualmente.
+El mock de ISP-Cube incluye un conjunto base de clientes representativos (inicialmente 2142, 2143 y 2144) embebidos en `mocks/isp_cube/main.py`. Cada reinicio (`POST /reset`) restablece esos datos, facilitando pruebas reproducibles sin dependencias externas.
 
 ---
 
@@ -122,7 +121,7 @@ Los endpoints principales se encuentran en `orchestrator/main.py` y comparten la
 
 1. Consulta a ISP-Cube para obtener el cliente maestro.
 2. Validaciones ejecutadas por `ensure_customer_ready`: flag de integración activo, campos obligatorios completos, coordenadas numéricas y dentro del bounding box definido (valores de Córdoba por defecto).
-3. Construcción del payload GeoJSON y envío a GeoGrid.
+3. Construcción del payload compatible con `clientes` de GeoGrid (incluyendo coordenadas y metadatos de red).
 4. Manejo de resultados:
    - `201 Created`: el registro se marca como creado (`action: created`).
    - `409 Conflict`: se recupera el identificador existente, se realiza un `PUT` y se marca como actualizado (`action: updated`).
@@ -132,20 +131,20 @@ Los incidentes `integration_disabled`, `missing_fields` e `invalid_coordinates` 
 
 ### 6.2 Provisionamiento de ONU (`POST /provision/onu`)
 
-1. Recuperación del cliente en ISP-Cube y reutilización de `ensure_customer_ready`.
-2. Comparación de hardware con `ensure_hardware_matches`; divergencias generan el incidente `hardware_mismatch` y devuelven `409 Conflict`.
+1. Recuperación del cliente en ISP-Cube y validaciones `ensure_customer_ready` + `ensure_alignment`.
+2. Upsert del registro en GeoGrid para garantizar que los datos de ubicación y red estén actualizados.
 3. Evaluación del flag `dry_run` (global o provisto en la petición):
-   - En modo simulación se devuelve un resultado informativo sin invocar SmartOLT.
-   - En modo ejecución se llama a `/onu/authorize`, con reintentos y circuit breaker configurados.
-4. Registro en auditoría con el resultado (`authorized`, `already_authorized`, simulaciones) y actualización de métricas.
+   - En modo simulación se devuelve un resultado informativo sin invocar GeoGrid.
+   - En modo ejecución se llama a `/integracao/atender`, registrando la asignación de puerto.
+4. Registro en auditoría con el resultado (`assigned`, `dry_run`, `error`) y actualización de métricas.
 
-El orquestador también valida que el par `olt_id` + `board` + `pon_port` no esté asignado a otra ONU distinta; de ser así dispara el incidente `hardware_port_conflict` y devuelve `409 Conflict`.
+Los conflictos de puerto devuelven `409 Conflict` y generan el incidente `geogrid_assignment_conflict`. Si un cliente activo con datos de red carece de asignación, se registra `missing_geogrid_assignment`.
 
 ### 6.3 Baja técnica (`POST /decommission/customer`)
 
 1. Verificación de estado inactivo mediante `ensure_customer_inactive`.
-2. Eliminación de la feature en GeoGrid; si no existe, se registra `decommission_missing_feature`.
-3. Desautorización de la ONU en SmartOLT; la ausencia de registros genera `decommission_missing_onu`.
+2. Búsqueda del cliente en GeoGrid; si no existe, se registra `decommission_missing_feature`.
+3. Eliminación de la asignación de puerto en GeoGrid; la ausencia de registros también genera `decommission_missing_feature`.
 4. Consolidación del resultado final y auditoría del proceso.
 
 ---
@@ -155,8 +154,8 @@ El orquestador también valida que el par `olt_id` + `board` + `pon_port` no est
 | Endpoint                 | Método | Descripción                                                | Códigos destacados |
 |--------------------------|:------:|------------------------------------------------------------|--------------------|
 | `/sync/customer`         | POST   | Replica un cliente en GeoGrid con validaciones previas.    | 200, 409, 412, 422 |
-| `/provision/onu`         | POST   | Autoriza una ONU o simula la operación según `dry_run`.    | 200, 204, 409, 412, 422 |
-| `/decommission/customer` | POST   | Retira recursos asociados a un cliente inactivo.           | 200, 204, 409, 412 |
+| `/provision/onu`         | POST   | Asigna al cliente un puerto en GeoGrid (respeta `dry_run`).| 200, 409, 400, 412, 422 |
+| `/decommission/customer` | POST   | Remueve la asignación de puerto para un cliente inactivo.  | 200, 404, 400, 412 |
 | `/config`                | GET    | Informa la configuración efectiva del orquestador.         | 200 |
 | `/config`                | POST   | Actualiza el flag global `dry_run`.                        | 200 |
 | `/reset`                 | POST   | Restablece mocks, auditorías e incidentes.                 | 202 |
@@ -168,12 +167,10 @@ El orquestador también valida que el par `olt_id` + `board` + `pon_port` no est
 
 ### 7.1 Ejemplos de invocación
 
-> **Importante:** Los mocks arrancan sin clientes precargados. Antes de consumir estos flujos, registrar los que se necesiten en ISP Cube vía `POST /customers`, incluyendo los campos obligatorios (`zone`, `lat`, `lon`, `odb`, etc.). Por ejemplo:
+> **Importante:** El mock de ISP-Cube incluye clientes demo (IDs `2142`, `2143`, `2144`). Podés inspeccionarlos con `GET /customers/customers_list` y ajustar sus banderas mediante `PUT /customers/{id}`. Ejemplo:
 
 ```bash
-curl -X POST http://localhost:8001/customers \
-  -H 'Content-Type: application/json' \
-  -d '{"customer_id":202,"name":"Cliente Demo","address":"Falsa 123","city":"Córdoba","zone":"Centro","lat":-31.41,"lon":-64.18,"odb":"CAJA-10","olt_id":1,"board":0,"pon":1,"onu_sn":"TESTSN00002","integration_enabled":true,"status":"active"}'
+curl \"http://localhost:8001/api/customers/customers_list?limit=5\" | jq
 ```
 
 Luego pueden ejecutarse las operaciones habituales:
@@ -264,9 +261,9 @@ Todos los paneles admiten filtros temporales desde Grafana y pueden extenderse p
 El servicio `ui` permite ejecutar los flujos sin uso de CLI:
 
 - Formularios para sincronización, provisionamiento y baja técnica.
-- Visualización de incidentes, auditorías y features en tiempo real.
+- Visualización de incidentes, auditorías y clientes en tiempo real.
 - Barra lateral para modificar URLs base, usuario (`X-Orchestrator-User`), lanzar `/reset` y consultar `/config`.
-- Herramientas para gestionar clientes en el mock de ISP-Cube (crear, editar, activar/desactivar integración y estado) sin recurrir a llamadas manuales.
+- Herramientas para consultar y actualizar clientes en el mock de ISP-Cube sin recurrir a llamadas manuales.
 
 Esta interfaz es útil para demostraciones y para usuarios que no desean interactuar directamente con los endpoints REST.
 
@@ -277,16 +274,14 @@ Esta interfaz es útil para demostraciones y para usuarios que no desean interac
 Se propone la siguiente secuencia para validar el entorno tras cada despliegue o cambio relevante:
 
 1. Restablecer estado (`docker compose up --build` y `POST /reset`).
-2. Registrar en ISP Cube los clientes de prueba necesarios (ej.: 202 activo, 912 con `integration_enabled=false`, 404 con coordenadas ausentes, 707 inactivo) mediante `POST /customers`.
-3. Sincronizar el cliente activo (p.e. 202) dos veces y verificar creación / actualización en GeoGrid.
-4. Intentar sincronizar el cliente con `integration_enabled=false` y corroborar el `412` esperado.
-5. Lanzar `/sync/customer` sobre el cliente incompleto para obtener `422 missing_fields`.
-6. Generar un conflicto en GeoGrid (duplicar feature) y confirmar que el flujo aplica `PUT`.
-7. Provisionar la ONU del cliente activo; repetir la petición para validar la respuesta `already_authorized`.
-8. Cambiar `pon_port` en el payload y comprobar el incidente `hardware_mismatch`.
-9. Simular fallos en SmartOLT usando parámetros `simulate` directamente sobre el mock.
-10. Procesar la baja del cliente inactivo y revisar incidentes `decommission_*`.
-11. Consultar `/audits` y `/incidents` para verificar la trazabilidad y repetir los flujos desde la UI Streamlit.
+2. Listar clientes demo disponibles (`GET http://localhost:8001/api/customers/customers_list?limit=5`).
+3. Ejecutar `/sync/customer` para `customer_id=2142` dos veces y verificar `created` / `updated` en GeoGrid.
+4. Deshabilitar la integración del cliente `2143` (`PUT /api/customers/2143`) y comprobar que `/sync/customer` devuelve `412 integration_disabled`.
+5. Alterar datos de red (por ejemplo, dejar `lat` vacío) y validar el `422 missing_fields`.
+6. Provisionar el cliente `2142` y confirmar que `/provision/onu` devuelve `status=assigned`.
+7. Intentar provisionar otro cliente reutilizando el mismo puerto para disparar `409 geogrid_assignment_conflict`.
+8. Ejecutar `/decommission/customer` sobre el cliente inactivo `2144` y revisar incidentes `decommission_*` en caso de asignaciones inexistentes.
+9. Consultar `/audits` y `/incidents` para verificar trazabilidad y repetir los flujos desde la UI Streamlit.
 
 La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas en `pytest` y `httpx`.
 
@@ -294,14 +289,14 @@ La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas
 
 ## 11. Runbook operativo
 
-### 11.1 Incidentes de hardware (`hardware_mismatch`, `hardware_port_conflict`)
+### 11.1 Incidentes de hardware (`hardware_mismatch`, `geogrid_assignment_conflict`)
 
 1. **Identificación**  
-   - Revisar el panel “Incidentes abiertos” en Grafana o `GET /incidents?kind=hardware_port_conflict`.  
+   - Revisar el panel “Incidentes abiertos” en Grafana o `GET /incidents?kind=geogrid_assignment_conflict`.  
    - Capturar `customer_id`, `olt_id`, `board`, `pon_port`, `requested_onu_sn` y el mensaje detallado.
 2. **Análisis**  
    - Para `hardware_mismatch`: comparar la información de ISP-Cube con el hardware real y corregir la discrepancia.  
-   - Para `hardware_port_conflict`: liberar el puerto en SmartOLT (o ajustar el cliente original) antes de reintentar.
+   - Para `geogrid_assignment_conflict`: liberar el puerto en GeoGrid o reasignarlo al cliente correcto antes de reintentar.
 3. **Remediación**  
    - Actualizar datos en los sistemas necesarios.  
    - Reintentar el proceso de provisión o baja y corroborar el éxito.

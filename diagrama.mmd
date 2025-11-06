@@ -25,7 +25,6 @@ flowchart LR
       direction TB
       ISP["ISP-Cube<br/>Catálogo comercial"]:::system
       GeoGrid["GeoGrid<br/>Inventario geoespacial"]:::system
-      SmartOLT["SmartOLT<br/>Control de ONUs/OLT"]:::system
     end
 
     %% ===== Entorno local (mocks) =====
@@ -33,7 +32,6 @@ flowchart LR
       direction TB
       ISPMock["isp-mock"]:::mock
       GeoMock["geogrid-mock"]:::mock
-      SmartMock["smartolt-mock"]:::mock
     end
 
     %% ===== Observabilidad y datos internos =====
@@ -51,11 +49,9 @@ flowchart LR
     UI -.->|"Gestión demo (POST/PATCH)"| ISPMock
 
     ISP -->|"GET /customers, etc."| Orchestrator
-    Orchestrator -->|"Sincronización GeoGrid\n POST/PUT /features"| GeoGrid
-    Orchestrator -->|"Provisionamiento ONU\n POST /onu/authorize"| SmartOLT
-    Orchestrator -->|"Baja técnica"| CB{{Decisión baja?}}
-    CB -->|"Eliminar feature"| GeoGrid
-    CB -->|"Eliminar ONU"| SmartOLT
+    Orchestrator -->|"Sincronización GeoGrid\n POST/PUT /clientes"| GeoGrid
+    Orchestrator -->|"Asignación de puerto\n POST /integracao/atender"| GeoGrid
+    Orchestrator -->|"Baja técnica\n DELETE /integracao/atender/{puerto}"| GeoGrid
 
     DecisionQA{{¿Config QA?}}:::decision
     Orchestrator --> DecisionQA
@@ -65,10 +61,8 @@ flowchart LR
     DecisionQA -->|"No"| ProdSwitch
     LocalSwitch --> ISPMock
     LocalSwitch --> GeoMock
-    LocalSwitch --> SmartMock
     ProdSwitch --> ISP
     ProdSwitch --> GeoGrid
-    ProdSwitch --> SmartOLT
 
     %% ===== Observabilidad =====
     Orchestrator -->|"Métricas (/metrics)"| Prom
@@ -81,7 +75,6 @@ flowchart LR
       direction TB
       ISPExport["Extracción ISP-Cube"]:::system
       GeoExport["Extracción GeoGrid"]:::system
-      SmartExport["Extracción SmartOLT"]:::system
     end
     Productivo -->|"APIs / Reports"| Exportaciones
     Exportaciones -->|"Datos consolidados"| Datamart

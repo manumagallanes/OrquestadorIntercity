@@ -38,7 +38,7 @@
       "default_region": "br",
       "regions": {
         "br": {
-          "base_url": "https://geogridmaps.prod.example.com/api",
+          "base_url": "https://geogridmaps.prod.example.com/api/v3",
           "timeout_seconds": 18.0,
           "verify_tls": true,
           "retry": {
@@ -52,40 +52,7 @@
           }
         },
         "mx": {
-          "base_url": "https://geogridmaps.mx.example.com/api",
-          "timeout_seconds": 18.0,
-          "verify_tls": true,
-          "retry": {
-            "max_attempts": 5,
-            "backoff_initial_seconds": 0.5,
-            "backoff_max_seconds": 10.0
-          },
-          "circuit_breaker": {
-            "failure_threshold": 3,
-            "recovery_timeout_seconds": 60.0
-          }
-        }
-      }
-    },
-    "smartolt": {
-      "default_region": "br",
-      "regions": {
-        "br": {
-          "base_url": "https://smartolt.prod.example.com/api",
-          "timeout_seconds": 18.0,
-          "verify_tls": true,
-          "retry": {
-            "max_attempts": 5,
-            "backoff_initial_seconds": 0.5,
-            "backoff_max_seconds": 10.0
-          },
-          "circuit_breaker": {
-            "failure_threshold": 3,
-            "recovery_timeout_seconds": 60.0
-          }
-        },
-        "mx": {
-          "base_url": "https://smartolt.mx.example.com/api",
+          "base_url": "https://geogridmaps.mx.example.com/api/v3",
           "timeout_seconds": 18.0,
           "verify_tls": true,
           "retry": {
