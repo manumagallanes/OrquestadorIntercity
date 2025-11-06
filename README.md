@@ -285,6 +285,56 @@ Se propone la siguiente secuencia para validar el entorno tras cada despliegue o
 
 La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas en `pytest` y `httpx`.
 
+### 10.1 Evidencia de pruebas manuales recientes
+
+Con el stack `docker compose up --build` en ejecución se verificaron los flujos principales mediante los siguientes comandos:
+
+- **Sincronización y provisión exitosa**
+  ```bash
+  curl -X POST http://localhost:8000/sync/customer \
+    -H 'Content-Type: application/json' \
+    -d '{"customer_id":2142}'
+
+  curl -X POST http://localhost:8000/provision/onu \
+    -H 'Content-Type: application/json' \
+    -d '{"customer_id":2142,"olt_id":1,"board":1,"pon_port":4,"onu_sn":"ZTEG12345678"}'
+  ```
+  Respuestas esperadas: `{"geogrid_id":1,"action":"updated"}` y `{"status":"assigned", ...}`.
+
+- **Conflicto por datos inconsistentes**
+  ```bash
+  curl -X POST http://localhost:8000/provision/onu \
+    -H 'Content-Type: application/json' \
+    -d '{"customer_id":2143,"olt_id":1,"board":1,"pon_port":4,"onu_sn":"OTROSN123"}'
+  ```
+  Respuesta: `409` con detalle de `hardware_mismatch`.
+
+- **Baja técnica completa**
+  ```bash
+  curl -X PUT http://localhost:8001/api/customers/2144 \
+    -H 'Content-Type: application/json' \
+    -d '{"integration_enabled":true,"status":"inactive"}'
+
+  curl -X POST http://localhost:8000/sync/customer \
+    -H 'Content-Type: application/json' \
+    -d '{"customer_id":2144}'
+
+  curl -X POST http://localhost:8000/provision/onu \
+    -H 'Content-Type: application/json' \
+    -d '{"customer_id":2144,"olt_id":2,"board":1,"pon_port":2,"onu_sn":"FHTT90213456"}'
+
+  curl -X PUT http://localhost:8001/api/customers/2144 \
+    -H 'Content-Type: application/json' \
+    -d '{"integration_enabled":false,"status":"inactive"}'
+
+  curl -X POST http://localhost:8000/decommission/customer \
+    -H 'Content-Type: application/json' \
+    -d '{"customer_id":2144}'
+  ```
+  Respuestas finales: sincronización `{"geogrid_id":2,"action":"updated"}`, provisión `{"status":"assigned", ...}`, baja `{"status":"removed","geogrid_id":2,"port":"OLT2-B1-P2"}`.
+
+Las ejecuciones anteriores se realizaron sobre los mocks incluidos en el repositorio y confirmaron que los flujos principales operan de extremo a extremo.
+
 ---
 
 ## 11. Runbook operativo
