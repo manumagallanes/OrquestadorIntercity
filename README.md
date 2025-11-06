@@ -122,6 +122,7 @@ Los endpoints principales se encuentran en `orchestrator/main.py` y comparten la
 1. Consulta a ISP-Cube para obtener el cliente maestro.
 2. Validaciones ejecutadas por `ensure_customer_ready`: flag de integración activo, campos obligatorios completos, coordenadas numéricas y dentro del bounding box definido (valores de Córdoba por defecto).
 3. Construcción del payload compatible con `clientes` de GeoGrid (incluyendo coordenadas y metadatos de red).
+   - El campo `nome` se arma como `"<ID conexión> - <Nombre>"` para facilitar la identificación visual en el mapa.
 4. Manejo de resultados:
    - `201 Created`: el registro se marca como creado (`action: created`).
    - `409 Conflict`: se recupera el identificador existente, se realiza un `PUT` y se marca como actualizado (`action: updated`).

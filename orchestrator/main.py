@@ -1348,7 +1348,17 @@ def register_customer_event(
     city_candidate = city or (customer.get("city") if customer else None)
     if _is_blank(city_candidate) and previous_event and not _is_blank(previous_event.get("city")):
         city_candidate = previous_event.get("city")
-    safe_city = city_candidate
+    if isinstance(city_candidate, dict):
+        safe_city = (
+            city_candidate.get("name")
+            or city_candidate.get("city")
+            or ""
+        )
+    elif city_candidate is not None:
+        safe_city = str(city_candidate)
+    else:
+        safe_city = ""
+    safe_city = safe_city.strip()
 
     customer_name = customer.get("name") if customer else None
     if not customer_name and metadata:
@@ -1372,6 +1382,27 @@ def register_customer_event(
             lat_value = fallback_lat if fallback_lat is not None else DEFAULT_COORDINATE_FALLBACK[0]
         if lon_value is None:
             lon_value = fallback_lon if fallback_lon is not None else DEFAULT_COORDINATE_FALLBACK[1]
+
+    connection_id: Optional[str] = None
+    if customer:
+        raw_code = customer.get("code")
+        raw_customer_id = customer.get("customer_id")
+        if raw_code:
+            connection_id = str(raw_code).strip()
+        elif raw_customer_id is not None:
+            connection_id = str(raw_customer_id).strip()
+    if not connection_id and metadata:
+        raw_connection = metadata.get("connection_id")
+        if raw_connection:
+            connection_id = str(raw_connection).strip()
+
+    if connection_id and customer_name:
+        display_label = f"{connection_id} - {customer_name}"
+    elif connection_id:
+        display_label = connection_id
+    else:
+        display_label = _format_customer_label(event_customer_id, customer_name)
+
     event_timestamp = timestamp or datetime.now(timezone.utc)
     if isinstance(event_timestamp, str):
         timestamp_str = event_timestamp
@@ -1390,8 +1421,9 @@ def register_customer_event(
         "source": source,
         "metadata": metadata or {},
         "customer_name": customer_name or "",
+        "connection_id": connection_id,
     }
-    event_entry["customer_label"] = _format_customer_label(event_customer_id, customer_name)
+    event_entry["customer_label"] = display_label or ""
 
     CUSTOMER_EVENTS.append(event_entry)
     cache_key: Optional[Any] = _normalize_customer_id(event_customer_id)
@@ -1888,7 +1920,8 @@ def _build_geogrid_cliente_payload(customer: Dict[str, Any]) -> Dict[str, Any]:
     codigo = str(customer.get("code") or customer.get("customer_id") or "").strip()
     if not codigo:
         codigo = f"customer-{customer.get('customer_id', 'unknown')}"
-    nombre = str(customer.get("name") or codigo)
+    customer_name = str(customer.get("name") or codigo)
+    display_name = f"{codigo} - {customer_name}"
     observaciones: List[str] = []
     zone = _customer_zone(customer)
     if zone:
@@ -1898,7 +1931,7 @@ def _build_geogrid_cliente_payload(customer: Dict[str, Any]) -> Dict[str, Any]:
     observacion = " | ".join(observaciones) if observaciones else None
     return {
         "codigoIntegracao": codigo,
-        "nome": nombre,
+        "nome": display_name,
         "endereco": customer.get("address") or "",
         "cidade": _customer_city(customer) or zone,
         "estado": _customer_state(customer) or "NA",
