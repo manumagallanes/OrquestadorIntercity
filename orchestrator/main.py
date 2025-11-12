@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -50,7 +50,20 @@ class RequestIdLoggingFilter(logging.Filter):
 logging.getLogger().addFilter(RequestIdLoggingFilter())
 
 class CustomerSyncRequest(BaseModel):
-    customer_id: int = Field(..., ge=1, description="Identifier of the ISP customer")
+    customer_id: Optional[int] = Field(
+        default=None, ge=1, description="Identifier of the ISP customer"
+    )
+    connection_code: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Código de conexión en ISP-Cube (campo code)",
+    )
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if self.customer_id is None and not self.connection_code:
+            raise ValueError("Debe indicar customer_id o connection_code")
+        return self
 
 
 class ProvisionRequest(BaseModel):
@@ -64,11 +77,33 @@ class ProvisionRequest(BaseModel):
         default=None,
         description="Override orchestrator dry-run flag when provided",
     )
+    connection_code: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Código de conexión en ISP-Cube",
+    )
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if self.customer_id is None and not self.connection_code:
+            raise ValueError("Debe indicar customer_id o connection_code")
+        return self
 
 
 class DecommissionRequest(BaseModel):
-    customer_id: int = Field(..., ge=1)
+    customer_id: Optional[int] = Field(default=None, ge=1)
+    connection_code: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Código de conexión en ISP-Cube",
+    )
     dry_run: Optional[bool] = Field(default=None)
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if self.customer_id is None and not self.connection_code:
+            raise ValueError("Debe indicar customer_id o connection_code")
+        return self
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -2170,11 +2205,15 @@ async def sync_customer(
 ) -> Dict[str, Any]:
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
+    resolved_customer_id: Optional[int] = payload.customer_id
     try:
-        customer = await isp_service.get_customer(
-            settings, payload.customer_id, fetch_json
+        customer = await _fetch_customer_record(
+            settings,
+            customer_id=payload.customer_id,
+            connection_code=payload.connection_code,
         )
         ensure_customer_ready(customer, action="sync")
+        resolved_customer_id = _resolved_customer_id(customer, payload.customer_id)
 
         cliente_payload = _build_geogrid_cliente_payload(customer)
         geogrid_id, action = await geogrid_service.upsert_cliente(
@@ -2182,17 +2221,23 @@ async def sync_customer(
         )
         SYNC_COUNTER.labels(result=action).inc()
         resolve_incidents(
-            customer_id=payload.customer_id,
+            customer_id=resolved_customer_id,
             action="sync",
             resolved_by=user,
             reason=f"sync_{action}",
         )
-        result = {"geogrid_id": geogrid_id, "action": action}
+        result = {
+            "geogrid_id": geogrid_id,
+            "action": action,
+            "connection_code": _customer_connection_code(
+                customer, payload.connection_code
+            ),
+        }
 
         record_audit(
             AuditEntry(
                 action="sync",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=False,
                 status="success",
@@ -2206,7 +2251,7 @@ async def sync_customer(
         record_audit(
             AuditEntry(
                 action="sync",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=False,
                 status="error",
@@ -2224,7 +2269,7 @@ async def sync_customer(
         record_audit(
             AuditEntry(
                 action="sync",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=False,
                 status="error",
@@ -2250,26 +2295,24 @@ async def provision_onu(
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
-
-    if payload.customer_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"message": "customer_id es obligatorio para provisionar"},
-        )
+    resolved_customer_id: Optional[int] = payload.customer_id
 
     try:
-        customer = await isp_service.get_customer(
-            settings, payload.customer_id, fetch_json
+        customer = await _fetch_customer_record(
+            settings,
+            customer_id=payload.customer_id,
+            connection_code=payload.connection_code,
         )
         ensure_customer_ready(customer, action="provision")
         ensure_alignment(customer, payload)
+        resolved_customer_id = _resolved_customer_id(customer, payload.customer_id)
         cliente_payload = _build_geogrid_cliente_payload(customer)
         geogrid_id, geogrid_action = await geogrid_service.upsert_cliente(
             settings, cliente_payload, fetch_json
         )
         if geogrid_action in {"created", "updated"}:
             resolve_incidents(
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 action="sync",
                 resolved_by=user,
                 reason=f"sync_{geogrid_action}",
@@ -2286,7 +2329,7 @@ async def provision_onu(
             record_audit(
                 AuditEntry(
                     action="provision",
-                    customer_id=payload.customer_id,
+                    customer_id=resolved_customer_id,
                     user=user,
                     dry_run=True,
                     status="success",
@@ -2316,7 +2359,7 @@ async def provision_onu(
                 record_incident(
                     "geogrid_assignment_conflict",
                     {
-                        "customer_id": payload.customer_id,
+                        "customer_id": resolved_customer_id,
                         "request": assignment_payload,
                         "detail": exc.detail,
                     },
@@ -2325,7 +2368,7 @@ async def provision_onu(
 
         PROVISION_COUNTER.labels(result="assigned").inc()
         resolve_incidents(
-            customer_id=payload.customer_id,
+            customer_id=resolved_customer_id,
             action="provision",
             resolved_by=user,
             reason="assigned",
@@ -2333,7 +2376,7 @@ async def provision_onu(
         record_audit(
             AuditEntry(
                 action="provision",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=False,
                 status="success",
@@ -2352,6 +2395,9 @@ async def provision_onu(
                 "trigger": "provision",
                 "geogrid_id": geogrid_id,
                 "port": port_identifier,
+                "connection_id": _customer_connection_code(
+                    customer, payload.connection_code
+                ),
             },
         )
         return {
@@ -2364,7 +2410,7 @@ async def provision_onu(
         record_audit(
             AuditEntry(
                 action="provision",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=dry_run_flag,
                 status="error",
@@ -2382,7 +2428,7 @@ async def provision_onu(
         record_audit(
             AuditEntry(
                 action="provision",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=dry_run_flag,
                 status="error",
@@ -2410,11 +2456,14 @@ async def decommission_customer(
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
 
     try:
-        customer = await isp_service.get_customer(
-            settings, payload.customer_id, fetch_json
+        customer = await _fetch_customer_record(
+            settings,
+            customer_id=payload.customer_id,
+            connection_code=payload.connection_code,
         )
         ensure_customer_inactive(customer)
         ensure_customer_has_network_keys(customer, action="decommission")
+        resolved_customer_id = _resolved_customer_id(customer, payload.customer_id)
 
         codigo_integracion = str(customer.get("code") or customer.get("customer_id"))
         geogrid_cliente = await geogrid_service.get_cliente_by_codigo(
@@ -2424,7 +2473,7 @@ async def decommission_customer(
             record_incident(
                 "decommission_missing_feature",
                 {
-                    "customer_id": payload.customer_id,
+                    "customer_id": resolved_customer_id,
                     "customer_code": codigo_integracion,
                 },
             )
@@ -2450,7 +2499,7 @@ async def decommission_customer(
             record_audit(
                 AuditEntry(
                     action="decommission",
-                    customer_id=payload.customer_id,
+                    customer_id=resolved_customer_id,
                     user=user,
                     dry_run=True,
                     status="success",
@@ -2467,16 +2516,16 @@ async def decommission_customer(
                 record_incident(
                     "decommission_missing_feature",
                     {
-                        "customer_id": payload.customer_id,
-                        "geogrid_id": geogrid_id,
-                        "port": port_identifier,
-                    },
-                )
+                    "customer_id": resolved_customer_id,
+                    "geogrid_id": geogrid_id,
+                    "port": port_identifier,
+                },
+            )
             raise
 
         DECOMMISSION_COUNTER.labels(result="removed").inc()
         resolve_incidents(
-            customer_id=payload.customer_id,
+            customer_id=resolved_customer_id,
             action="decommission",
             resolved_by=user,
             reason="removed",
@@ -2484,7 +2533,7 @@ async def decommission_customer(
         record_audit(
             AuditEntry(
                 action="decommission",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=False,
                 status="success",
@@ -2503,6 +2552,9 @@ async def decommission_customer(
                 "trigger": "decommission",
                 "geogrid_id": geogrid_id,
                 "port": port_identifier,
+                "connection_id": _customer_connection_code(
+                    customer, payload.connection_code
+                ),
             },
         )
         return {
@@ -2515,7 +2567,7 @@ async def decommission_customer(
         record_audit(
             AuditEntry(
                 action="decommission",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=dry_run_flag,
                 status="error",
@@ -2533,7 +2585,7 @@ async def decommission_customer(
         record_audit(
             AuditEntry(
                 action="decommission",
-                customer_id=payload.customer_id,
+                customer_id=resolved_customer_id,
                 user=user,
                 dry_run=dry_run_flag,
                 status="error",
@@ -3114,3 +3166,38 @@ if __name__ == "__main__":
         port=int(os.getenv("PORT", "8000")),
         reload=bool(int(os.getenv("UVICORN_RELOAD", "0"))),
     )
+def _customer_connection_code(
+    customer: Dict[str, Any], fallback: Optional[str] = None
+) -> Optional[str]:
+    raw_code = customer.get("code") or customer.get("connection_code")
+    if isinstance(raw_code, str) and raw_code.strip():
+        return raw_code.strip()
+    if fallback:
+        return fallback.strip()
+    return None
+
+
+async def _fetch_customer_record(
+    settings: EnvConfig,
+    *,
+    customer_id: Optional[int],
+    connection_code: Optional[str],
+) -> Dict[str, Any]:
+    if customer_id is not None:
+        return await isp_service.get_customer(settings, customer_id, fetch_json)
+    if connection_code:
+        return await isp_service.get_customer_by_code(
+            settings, connection_code, fetch_json
+        )
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"message": "Debe especificar customer_id o connection_code"},
+    )
+
+
+def _resolved_customer_id(customer: Dict[str, Any], fallback: Optional[int] = None) -> Optional[int]:
+    candidate = customer.get("customer_id") or customer.get("id") or fallback
+    try:
+        return int(candidate) if candidate is not None else None
+    except (TypeError, ValueError):
+        return fallback

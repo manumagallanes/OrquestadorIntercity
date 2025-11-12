@@ -1,6 +1,8 @@
 services:
   orchestrator:
     build: .
+    env_file:
+      - .env
     command:
       - uvicorn
       - orchestrator.main:app

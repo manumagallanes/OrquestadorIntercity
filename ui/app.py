@@ -73,9 +73,16 @@ def sync_customer_section() -> None:
         customer_id = st.number_input(
             "ID de cliente (ISP-Cube)", min_value=1, step=1, value=202
         )
+        connection_code = st.text_input(
+            "Código de conexión (opcional)", value=""
+        )
         submitted = st.form_submit_button("Sincronizar")
         if submitted:
-            payload = {"customer_id": int(customer_id)}
+            payload: Dict[str, Any] = {}
+            if connection_code.strip():
+                payload["connection_code"] = connection_code.strip()
+            else:
+                payload["customer_id"] = int(customer_id)
             success, status, data = call_api("POST", "/sync/customer", json=payload)
             display_response(success, status, data)
 
@@ -90,6 +97,9 @@ def provision_onu_section() -> None:
             step=1,
             value=2142,
         )
+        connection_code = col1.text_input(
+            "Código de conexión (opcional)", value=""
+        )
         olt_id = col2.number_input("OLT ID", min_value=1, step=1, value=1)
         board = col2.number_input("Board", min_value=0, step=1, value=1)
         pon_port = col3.number_input("Puerto PON", min_value=0, step=1, value=4)
@@ -101,12 +111,15 @@ def provision_onu_section() -> None:
         submitted = st.form_submit_button("Asignar puerto")
         if submitted:
             payload: Dict[str, Any] = {
-                "customer_id": int(customer_id),
                 "olt_id": int(olt_id),
                 "board": int(board),
                 "pon_port": int(pon_port),
                 "onu_sn": onu_sn.strip(),
             }
+            if connection_code.strip():
+                payload["connection_code"] = connection_code.strip()
+            else:
+                payload["customer_id"] = int(customer_id)
             if dry_run_choice == "Forzar true":
                 payload["dry_run"] = True
             elif dry_run_choice == "Forzar false":
@@ -124,6 +137,9 @@ def decommission_section() -> None:
             step=1,
             value=707,
         )
+        connection_code = st.text_input(
+            "Código de conexión (opcional)", value=""
+        )
         dry_run = st.checkbox(
             "Dry-run (solo reporte)",
             value=False,
@@ -131,7 +147,11 @@ def decommission_section() -> None:
         )
         submitted = st.form_submit_button("Ejecutar baja")
         if submitted:
-            payload: Dict[str, Any] = {"customer_id": int(customer_id)}
+            payload: Dict[str, Any] = {}
+            if connection_code.strip():
+                payload["connection_code"] = connection_code.strip()
+            else:
+                payload["customer_id"] = int(customer_id)
             payload["dry_run"] = bool(dry_run)
             success, status, data = call_api(
                 "POST", "/decommission/customer", json=payload

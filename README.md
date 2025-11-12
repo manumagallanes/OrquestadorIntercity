@@ -70,7 +70,7 @@ El campo `default_region` determina la región activa cuando no se indica otra e
 
 - `ORCHESTRATOR_ENV`: selecciona el archivo de configuración a cargar (`dev` por defecto).
 - `ISP_REGION`, `GEOGRID_REGION`: sustituyen la región por defecto de cada servicio.
-- `ISP_BASE_URL`, `GEOGRID_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON.
+- `ISP_BASE_URL`, `GEOGRID_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON. Para entornos reales además debés definir `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_BEARER`, `GEOGRID_BEARER`.
 - `DRY_RUN`: fuerza el valor inicial del flag global `dry_run` (interpreta `true/false`, `1/0` o equivalentes).
 - Cualquier valor declarado como `env:VARIABLE` en los JSON debe definirse en el entorno del proceso antes de iniciar el orquestador.
 
@@ -119,7 +119,7 @@ Los endpoints principales se encuentran en `orchestrator/main.py` y comparten la
 
 ### 6.1 Sincronización de cliente hacia GeoGrid (`POST /sync/customer`)
 
-1. Consulta a ISP-Cube para obtener el cliente maestro.
+1. Consulta a ISP-Cube para obtener el cliente maestro (el orquestador acepta `customer_id` o `connection_code`).
 2. Validaciones ejecutadas por `ensure_customer_ready`: flag de integración activo, campos obligatorios completos, coordenadas numéricas y dentro del bounding box definido (valores de Córdoba por defecto).
 3. Construcción del payload compatible con `clientes` de GeoGrid (incluyendo coordenadas y metadatos de red).
    - El campo `nome` se arma como `"<ID conexión> - <Nombre>"` para facilitar la identificación visual en el mapa.
@@ -132,7 +132,7 @@ Los incidentes `integration_disabled`, `missing_fields` e `invalid_coordinates` 
 
 ### 6.2 Provisionamiento de ONU (`POST /provision/onu`)
 
-1. Recuperación del cliente en ISP-Cube y validaciones `ensure_customer_ready` + `ensure_alignment`.
+1. Recuperación del cliente en ISP-Cube (por `customer_id` o `connection_code`) y validaciones `ensure_customer_ready` + `ensure_alignment`.
 2. Upsert del registro en GeoGrid para garantizar que los datos de ubicación y red estén actualizados.
 3. Evaluación del flag `dry_run` (global o provisto en la petición):
    - En modo simulación se devuelve un resultado informativo sin invocar GeoGrid.
@@ -143,7 +143,7 @@ Los conflictos de puerto devuelven `409 Conflict` y generan el incidente `geogri
 
 ### 6.3 Baja técnica (`POST /decommission/customer`)
 
-1. Verificación de estado inactivo mediante `ensure_customer_inactive`.
+1. Verificación de estado inactivo mediante `ensure_customer_inactive` (identificando al cliente por `customer_id` o `connection_code`).
 2. Búsqueda del cliente en GeoGrid; si no existe, se registra `decommission_missing_feature`.
 3. Eliminación de la asignación de puerto en GeoGrid; la ausencia de registros también genera `decommission_missing_feature`.
 4. Consolidación del resultado final y auditoría del proceso.

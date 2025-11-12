@@ -61,3 +61,20 @@ async def get_customer(
             region_name=region,
         )
 
+
+async def get_customer_by_code(
+    settings: "EnvConfig",
+    connection_code: str,
+    fetch_json,
+) -> Dict[str, Any]:
+    client_kwargs, region = settings.http_client_kwargs("isp")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        return await fetch_json(
+            client,
+            "GET",
+            "/customer",
+            params={"code": connection_code},
+            service="isp",
+            settings=settings,
+            region_name=region,
+        )
