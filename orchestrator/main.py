@@ -58,11 +58,20 @@ class CustomerSyncRequest(BaseModel):
         min_length=1,
         description="Código de conexión en ISP-Cube (campo code)",
     )
+    connection_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="ID interno de la conexión en ISP-Cube",
+    )
 
     @model_validator(mode="after")
     def validate_identifier(self):
-        if self.customer_id is None and not self.connection_code:
-            raise ValueError("Debe indicar customer_id o connection_code")
+        if (
+            self.customer_id is None
+            and self.connection_code is None
+            and self.connection_id is None
+        ):
+            raise ValueError("Debe indicar customer_id, connection_id o connection_code")
         return self
 
 
@@ -82,11 +91,20 @@ class ProvisionRequest(BaseModel):
         min_length=1,
         description="Código de conexión en ISP-Cube",
     )
+    connection_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="ID interno de la conexión en ISP-Cube",
+    )
 
     @model_validator(mode="after")
     def validate_identifier(self):
-        if self.customer_id is None and not self.connection_code:
-            raise ValueError("Debe indicar customer_id o connection_code")
+        if (
+            self.customer_id is None
+            and self.connection_code is None
+            and self.connection_id is None
+        ):
+            raise ValueError("Debe indicar customer_id, connection_id o connection_code")
         return self
 
 
@@ -98,11 +116,20 @@ class DecommissionRequest(BaseModel):
         description="Código de conexión en ISP-Cube",
     )
     dry_run: Optional[bool] = Field(default=None)
+    connection_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="ID interno de la conexión en ISP-Cube",
+    )
 
     @model_validator(mode="after")
     def validate_identifier(self):
-        if self.customer_id is None and not self.connection_code:
-            raise ValueError("Debe indicar customer_id o connection_code")
+        if (
+            self.customer_id is None
+            and self.connection_code is None
+            and self.connection_id is None
+        ):
+            raise ValueError("Debe indicar customer_id, connection_id o connection_code")
         return self
 
 
@@ -484,6 +511,10 @@ REQUIRED_CUSTOMER_FIELDS: List[str] = [
     "board",
     "pon",
     "onu_sn",
+    "connection_id",
+    "plan_id",
+    "ftthbox_id",
+    "ftth_port_id",
 ]
 
 CORDOBA_LAT_RANGE: Tuple[float, float] = (-35.5, -29.0)
@@ -501,6 +532,7 @@ INCIDENT_KIND_LABELS: Dict[str, str] = {
     "missing_fields": "Datos incompletos",
     "missing_network_keys": "Identificadores de red faltantes",
     "integration_disabled": "Integración deshabilitada",
+    "automation_not_allowed": "Cliente fuera de ventana de automatización",
     "invalid_coordinates": "Coordenadas inválidas",
     "hardware_mismatch": "Desajuste hardware/OLT",
     "decommission_status_active": "Cliente activo al solicitar baja",
@@ -521,6 +553,42 @@ ZONE_BASE_COORDINATES: Dict[str, Tuple[float, float]] = {
     "Guiñazú": (-31.2861, -64.1736),
     "Villa Test": (-31.1, -64.0),
 }
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _parse_cutoff_timestamp(raw_value: Optional[str]) -> Optional[datetime]:
+    if not raw_value:
+        return None
+    cleaned = raw_value.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) == 10 and cleaned.count("-") == 2:
+        cleaned = f"{cleaned}T00:00:00"
+    try:
+        return _as_utc(_parse_iso8601(cleaned))
+    except Exception:
+        logger.warning("Invalid ORCHESTRATOR_MIN_START_DATE value: %s", raw_value)
+        return None
+
+
+AUTOMATION_MIN_START_TS = _parse_cutoff_timestamp(
+    os.getenv("ORCHESTRATOR_MIN_START_DATE", "2025-11-13")
+)
+
+def _parse_allowed_statuses(raw_value: Optional[str]) -> Set[str]:
+    if not raw_value:
+        return {"enabled"}
+    tokens = [token.strip().lower() for token in raw_value.split(",")]
+    return {token for token in tokens if token}
+
+
+ALLOWED_CUSTOMER_STATUS = _parse_allowed_statuses(
+    os.getenv("ORCHESTRATOR_ALLOWED_STATUSES")
+)
 DEFAULT_ZONE_LABEL = "Sin zona"
 CUSTOMER_EVENT_BUFFER_SIZE = int(os.getenv("CUSTOMER_EVENT_BUFFER_SIZE", "2000"))
 CUSTOMER_EVENTS: deque[Dict[str, Any]] = deque(maxlen=CUSTOMER_EVENT_BUFFER_SIZE)
@@ -1746,19 +1814,50 @@ def _is_blank(value: Any) -> bool:
 
 def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
     customer_id = customer.get("customer_id")
-    if not customer.get("integration_enabled"):
+    status_value = str(customer.get("status") or "").strip().lower()
+    if status_value and status_value not in ALLOWED_CUSTOMER_STATUS:
         record_incident(
-            "integration_disabled",
-            {"customer_id": customer_id, "action": action},
+            "automation_not_allowed",
+            {
+                "customer_id": customer_id,
+                "action": action,
+                "reason": "status",
+                "status": status_value,
+            },
         )
         raise HTTPException(
             status_code=status.HTTP_412_PRECONDITION_FAILED,
             detail={
-                "message": "Customer not eligible for automation",
+                "message": "Customer status not eligible for automation",
                 "customer_id": customer_id,
-                "reason": "integration_disabled",
+                "status": status_value,
+                "reason": "status",
             },
         )
+
+    if AUTOMATION_MIN_START_TS is not None:
+        activation_ts = _customer_activation_timestamp(customer)
+        if activation_ts is None or activation_ts < AUTOMATION_MIN_START_TS:
+            record_incident(
+                "automation_not_allowed",
+                {
+                    "customer_id": customer_id,
+                    "action": action,
+                    "reason": "cutoff",
+                    "activation_ts": activation_ts.isoformat() if activation_ts else None,
+                    "cutoff": AUTOMATION_MIN_START_TS.isoformat(),
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_412_PRECONDITION_FAILED,
+                detail={
+                    "message": "Customer created before automation cutoff",
+                    "customer_id": customer_id,
+                    "activation_ts": activation_ts.isoformat() if activation_ts else None,
+                    "cutoff": AUTOMATION_MIN_START_TS.isoformat(),
+                    "reason": "cutoff",
+                },
+            )
 
     missing_fields = [
         field
@@ -1950,9 +2049,23 @@ def _customer_coordinates(customer: Dict[str, Any]) -> Tuple[float, float]:
     return lat, lon
 
 
+def _resolve_plan_name(customer: Dict[str, Any]) -> Optional[str]:
+    raw_plan_name = customer.get("plan_name")
+    if isinstance(raw_plan_name, str) and raw_plan_name.strip():
+        return raw_plan_name.strip()
+    plan_info = customer.get("plan")
+    if isinstance(plan_info, dict):
+        plan_name = plan_info.get("name")
+        if isinstance(plan_name, str) and plan_name.strip():
+            return plan_name.strip()
+    return None
+
+
 def _build_geogrid_cliente_payload(customer: Dict[str, Any]) -> Dict[str, Any]:
     lat, lon = _customer_coordinates(customer)
-    codigo = str(customer.get("code") or customer.get("customer_id") or "").strip()
+    codigo = _customer_connection_identifier(customer) or str(
+        customer.get("code") or customer.get("customer_id") or ""
+    ).strip()
     if not codigo:
         codigo = f"customer-{customer.get('customer_id', 'unknown')}"
     customer_name = str(customer.get("name") or codigo)
@@ -1961,8 +2074,29 @@ def _build_geogrid_cliente_payload(customer: Dict[str, Any]) -> Dict[str, Any]:
     zone = _customer_zone(customer)
     if zone:
         observaciones.append(f"Zona: {zone}")
+    plan_name = _resolve_plan_name(customer)
+    if plan_name:
+        observaciones.append(f"Plan: {plan_name}")
+    ftth_box = customer.get("ftthbox_id")
+    if ftth_box:
+        observaciones.append(f"Caja: {ftth_box}")
+    ftth_port = customer.get("ftth_port_id")
+    if ftth_port:
+        observaciones.append(f"Puerto: {ftth_port}")
+    if (
+        customer.get("olt_id") is not None
+        and customer.get("board") is not None
+        and customer.get("pon") is not None
+    ):
+        observaciones.append(
+            f"OLT/B/P: {customer.get('olt_id')}-{customer.get('board')}-{customer.get('pon')}"
+        )
+    elif customer.get("olt_id") is not None:
+        observaciones.append(f"OLT: {customer.get('olt_id')}")
     if customer.get("onu_sn"):
         observaciones.append(f"ONU: {customer.get('onu_sn')}")
+    if customer.get("user"):
+        observaciones.append(f"PPPoE: {customer.get('user')}")
     observacion = " | ".join(observaciones) if observaciones else None
     return {
         "codigoIntegracao": codigo,
@@ -1974,6 +2108,39 @@ def _build_geogrid_cliente_payload(customer: Dict[str, Any]) -> Dict[str, Any]:
         "longitude": lon,
         "observacao": observacion,
     }
+
+
+def _parse_customer_timestamp_value(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return _as_utc(value)
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
+    try:
+        return _as_utc(_parse_iso8601(str(value)))
+    except Exception:
+        return None
+
+
+def _customer_activation_timestamp(customer: Dict[str, Any]) -> Optional[datetime]:
+    connection = customer.get("connection") if isinstance(customer.get("connection"), dict) else {}
+    candidates = [
+        connection.get("start_date"),
+        customer.get("start_date"),
+        connection.get("created_at"),
+        customer.get("created_at"),
+        connection.get("updated_at"),
+        customer.get("updated_at"),
+    ]
+    for candidate in candidates:
+        parsed = _parse_customer_timestamp_value(candidate)
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def ensure_customer_inactive(customer: Dict[str, Any]) -> None:
@@ -2211,6 +2378,7 @@ async def sync_customer(
             settings,
             customer_id=payload.customer_id,
             connection_code=payload.connection_code,
+            connection_id=payload.connection_id,
         )
         ensure_customer_ready(customer, action="sync")
         resolved_customer_id = _resolved_customer_id(customer, payload.customer_id)
@@ -2229,6 +2397,7 @@ async def sync_customer(
         result = {
             "geogrid_id": geogrid_id,
             "action": action,
+            "connection_id": customer.get("connection_id"),
             "connection_code": _customer_connection_code(
                 customer, payload.connection_code
             ),
@@ -2302,6 +2471,7 @@ async def provision_onu(
             settings,
             customer_id=payload.customer_id,
             connection_code=payload.connection_code,
+            connection_id=payload.connection_id,
         )
         ensure_customer_ready(customer, action="provision")
         ensure_alignment(customer, payload)
@@ -2383,6 +2553,10 @@ async def provision_onu(
                 detail={
                     "geogrid_id": geogrid_id,
                     "assignment": assignment_result,
+                    "connection_id": customer.get("connection_id"),
+                    "connection_code": _customer_connection_code(
+                        customer, payload.connection_code
+                    ),
                 },
                 timestamp=timestamp,
             )
@@ -2395,15 +2569,17 @@ async def provision_onu(
                 "trigger": "provision",
                 "geogrid_id": geogrid_id,
                 "port": port_identifier,
-                "connection_id": _customer_connection_code(
-                    customer, payload.connection_code
-                ),
+                **_connection_metadata_snapshot(customer, payload.connection_code),
             },
         )
         return {
             "status": "assigned",
             "geogrid_id": geogrid_id,
             "assignment": assignment_result,
+            "connection_id": customer.get("connection_id"),
+            "connection_code": _customer_connection_code(
+                customer, payload.connection_code
+            ),
         }
     except HTTPException as exc:
         PROVISION_COUNTER.labels(result="error").inc()
@@ -2460,6 +2636,7 @@ async def decommission_customer(
             settings,
             customer_id=payload.customer_id,
             connection_code=payload.connection_code,
+            connection_id=payload.connection_id,
         )
         ensure_customer_inactive(customer)
         ensure_customer_has_network_keys(customer, action="decommission")
@@ -2540,6 +2717,10 @@ async def decommission_customer(
                 detail={
                     "geogrid_id": geogrid_id,
                     "port": port_identifier,
+                    "connection_id": customer.get("connection_id"),
+                    "connection_code": _customer_connection_code(
+                        customer, payload.connection_code
+                    ),
                 },
                 timestamp=timestamp,
             )
@@ -2552,15 +2733,17 @@ async def decommission_customer(
                 "trigger": "decommission",
                 "geogrid_id": geogrid_id,
                 "port": port_identifier,
-                "connection_id": _customer_connection_code(
-                    customer, payload.connection_code
-                ),
+                **_connection_metadata_snapshot(customer, payload.connection_code),
             },
         )
         return {
             "status": "removed",
             "geogrid_id": geogrid_id,
             "port": port_identifier,
+            "connection_id": customer.get("connection_id"),
+            "connection_code": _customer_connection_code(
+                customer, payload.connection_code
+            ),
         }
     except HTTPException as exc:
         DECOMMISSION_COUNTER.labels(result="error").inc()
@@ -2706,6 +2889,10 @@ async def create_customer_event(
     event_metadata = dict(payload.metadata)
     if payload.source and "origin" not in event_metadata:
         event_metadata["origin"] = payload.source
+    if customer:
+        connection_meta = _connection_metadata_snapshot(customer)
+        for key, value in connection_meta.items():
+            event_metadata.setdefault(key, value)
 
     event_entry = register_customer_event(
         payload.event_type,
@@ -3169,15 +3356,92 @@ if __name__ == "__main__":
 def _customer_connection_code(
     customer: Dict[str, Any], fallback: Optional[str] = None
 ) -> Optional[str]:
-    raw_code = customer.get("code") or customer.get("connection_code")
+    raw_code = customer.get("connection_code") or customer.get("code")
     if isinstance(raw_code, str) and raw_code.strip():
         return raw_code.strip()
+    if raw_code is not None and not isinstance(raw_code, str):
+        return str(raw_code)
     if fallback:
         return fallback.strip()
     return None
 
 
+def _customer_connection_identifier(
+    customer: Dict[str, Any], fallback: Optional[str] = None
+) -> Optional[str]:
+    connection_id = customer.get("connection_id")
+    if connection_id is not None:
+        return str(connection_id)
+    return _customer_connection_code(customer, fallback)
+
+
+def _connection_metadata_snapshot(
+    customer: Dict[str, Any], fallback_code: Optional[str] = None
+) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {}
+    identifier = _customer_connection_identifier(customer, fallback_code)
+    if identifier:
+        metadata["connection_id"] = identifier
+    code_value = _customer_connection_code(customer, fallback_code)
+    if code_value and code_value != identifier:
+        metadata["connection_code"] = code_value
+    return metadata
+
+
 async def _fetch_customer_record(
+    settings: EnvConfig,
+    *,
+    customer_id: Optional[int],
+    connection_code: Optional[str],
+    connection_id: Optional[int],
+) -> Dict[str, Any]:
+    resolved_customer_id = customer_id
+    resolved_code = connection_code
+    connection_payload: Optional[Dict[str, Any]] = None
+
+    if connection_id is not None:
+        connection_payload = await isp_service.get_connection_by_id(
+            settings,
+            connection_id=connection_id,
+            fetch_json=fetch_json,
+        )
+        if connection_payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "message": "Conexión no encontrada en ISP-Cube",
+                    "connection_id": connection_id,
+                },
+            )
+        conn_customer_id = connection_payload.get("customer_id")
+        if conn_customer_id is not None:
+            try:
+                resolved_customer_id = int(conn_customer_id)
+            except (TypeError, ValueError):
+                resolved_customer_id = conn_customer_id
+        elif resolved_customer_id is None:
+            nested_customer = connection_payload.get("customer")
+            if isinstance(nested_customer, dict):
+                resolved_code = resolved_code or nested_customer.get("code")
+        if not resolved_code and connection_payload.get("connection_code"):
+            resolved_code = connection_payload.get("connection_code")
+
+    base_customer = await _base_customer_lookup(
+        settings,
+        customer_id=resolved_customer_id,
+        connection_code=resolved_code,
+    )
+    enriched_customer = await _ensure_connection_metadata(
+        settings,
+        base_customer,
+        connection_payload=connection_payload,
+        requested_connection_id=connection_id,
+        requested_connection_code=connection_code,
+    )
+    return enriched_customer
+
+
+async def _base_customer_lookup(
     settings: EnvConfig,
     *,
     customer_id: Optional[int],
@@ -3191,8 +3455,198 @@ async def _fetch_customer_record(
         )
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail={"message": "Debe especificar customer_id o connection_code"},
+        detail={"message": "Debe especificar customer_id, connection_id o connection_code"},
     )
+
+
+async def _ensure_connection_metadata(
+    settings: EnvConfig,
+    customer: Dict[str, Any],
+    *,
+    connection_payload: Optional[Dict[str, Any]],
+    requested_connection_id: Optional[int],
+    requested_connection_code: Optional[str],
+) -> Dict[str, Any]:
+    merged = dict(customer)
+    if "customer_id" not in merged and merged.get("id") is not None:
+        merged["customer_id"] = merged.get("id")
+    connections = _sanitize_connection_candidates(merged.get("connections"))
+    if connections:
+        merged["connections"] = connections
+    resolved_connection = dict(connection_payload) if isinstance(connection_payload, dict) else None
+
+    if resolved_connection is None:
+        resolved_connection = _select_connection_candidate(
+            connections,
+            requested_connection_id,
+            requested_connection_code,
+        )
+
+    if resolved_connection is None:
+        extra_connections = await _maybe_fetch_connections_for_customer(
+            settings, merged
+        )
+        if extra_connections:
+            connections = _merge_connection_candidates(connections, extra_connections)
+            merged["connections"] = connections
+            resolved_connection = _select_connection_candidate(
+                connections,
+                requested_connection_id,
+                requested_connection_code,
+            )
+            if resolved_connection is None and len(connections) == 1:
+                resolved_connection = connections[0]
+
+    if resolved_connection is None:
+        if requested_connection_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "message": "La conexión indicada no pertenece al cliente o no existe",
+                    "connection_id": requested_connection_id,
+                    "customer_id": merged.get("customer_id"),
+                },
+            )
+        if len(connections) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_412_PRECONDITION_FAILED,
+                detail={
+                    "message": "El cliente tiene múltiples conexiones; especifique connection_id",
+                    "customer_id": merged.get("customer_id"),
+                    "available_connections": [
+                        conn.get("id") for conn in connections if conn.get("id") is not None
+                    ],
+                },
+            )
+        return merged
+
+    merged["connection"] = dict(resolved_connection)
+    if resolved_connection.get("id") is not None:
+        merged["connection_id"] = resolved_connection["id"]
+    connection_code = (
+        resolved_connection.get("connection_code")
+        or resolved_connection.get("oldcode")
+        or resolved_connection.get("code")
+    )
+    if connection_code and not merged.get("connection_code"):
+        merged["connection_code"] = connection_code
+
+    _propagate_connection_fields(merged, resolved_connection)
+    return merged
+
+
+async def _maybe_fetch_connections_for_customer(
+    settings: EnvConfig,
+    customer: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    customer_id = customer.get("customer_id")
+    try:
+        customer_id_int = int(customer_id) if customer_id is not None else None
+    except (TypeError, ValueError):
+        customer_id_int = None
+    if not customer_id_int:
+        return []
+    return await isp_service.list_customer_connections(
+        settings,
+        customer_id=customer_id_int,
+        fetch_json=fetch_json,
+    )
+
+
+def _sanitize_connection_candidates(raw_connections: Any) -> List[Dict[str, Any]]:
+    if not isinstance(raw_connections, list):
+        return []
+    sanitized: List[Dict[str, Any]] = []
+    for entry in raw_connections:
+        if isinstance(entry, dict):
+            sanitized.append(dict(entry))
+    return sanitized
+
+
+def _merge_connection_candidates(
+    existing: List[Dict[str, Any]],
+    extras: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not existing:
+        return [dict(entry) for entry in extras if isinstance(entry, dict)]
+    merged = list(existing)
+    known_ids = {entry.get("id") for entry in existing if entry.get("id") is not None}
+    for entry in extras:
+        if not isinstance(entry, dict):
+            continue
+        conn_id = entry.get("id")
+        if conn_id is not None and conn_id in known_ids:
+            continue
+        merged.append(dict(entry))
+    return merged
+
+
+def _select_connection_candidate(
+    candidates: List[Dict[str, Any]],
+    requested_connection_id: Optional[int],
+    requested_connection_code: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    if not candidates:
+        return None
+    if requested_connection_id is not None:
+        for entry in candidates:
+            conn_id = entry.get("id")
+            try:
+                if conn_id is not None and int(conn_id) == requested_connection_id:
+                    return entry
+            except (TypeError, ValueError):
+                continue
+    code_token = _normalize_connection_token(requested_connection_code)
+    if code_token:
+        for entry in candidates:
+            for key in ("connection_code", "oldcode", "code", "id"):
+                value = entry.get(key)
+                if _normalize_connection_token(value) == code_token:
+                    return entry
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def _normalize_connection_token(value: Optional[Any]) -> Optional[str]:
+    if value is None:
+        return None
+    token = str(value).strip()
+    return token or None
+
+
+def _propagate_connection_fields(customer: Dict[str, Any], connection: Dict[str, Any]) -> None:
+    for field in ("lat", "lng", "address"):
+        if _is_blank(customer.get(field)) and not _is_blank(connection.get(field)):
+            customer[field] = connection.get(field)
+    for field in (
+        "plan_id",
+        "node_id",
+        "ftthbox_id",
+        "ftth_port_id",
+        "user",
+        "password",
+        "ip",
+        "ipv6",
+        "local_ip",
+    ):
+        if customer.get(field) in (None, "", []):
+            value = connection.get(field)
+            if value not in (None, "", []):
+                customer[field] = value
+
+    plan_info = connection.get("plan")
+    if isinstance(plan_info, dict):
+        customer.setdefault("plan", dict(plan_info))
+        plan_name = plan_info.get("name")
+        if plan_name and _is_blank(customer.get("plan_name")):
+            customer["plan_name"] = plan_name
+    node_info = connection.get("node")
+    if isinstance(node_info, dict):
+        customer.setdefault("node", dict(node_info))
+    customer_summary = connection.get("customer")
+    if isinstance(customer_summary, dict):
+        customer.setdefault("customer_summary", dict(customer_summary))
 
 
 def _resolved_customer_id(customer: Dict[str, Any], fallback: Optional[int] = None) -> Optional[int]:

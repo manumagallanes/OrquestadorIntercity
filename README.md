@@ -410,3 +410,43 @@ Las ejecuciones anteriores se realizaron sobre los mocks incluidos en el reposit
 - `scripts/`: utilitarios reutilizables para operaciones o pruebas.
 
 Con esta información se puede comprender la arquitectura completa, ejecutar los flujos principales y adaptar el Orquestador Intercity a distintos escenarios de integración.
+
+---
+
+## 15. Job automático para altas recientes
+
+El script `scripts/poll_isp_connections.py` consulta el endpoint oficial `connections_provisioning_logs` de ISP-Cube y dispara `/sync/customer` por cada movimiento `create_connection` detectado. Así, cualquier alta creada en el OSS se replica en GeoGrid sin intervención manual.
+
+### 15.1 Requisitos
+
+1. Exportar las variables ISP (`ISP_BASE_URL`, `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_USERNAME`, `ISP_BEARER`). Lo más práctico es `source .env` antes de ejecutar el job.  
+2. Opcional: `ORCHESTRATOR_BASE_URL` (default `http://localhost:8000`), `ORCHESTRATOR_USER_HEADER` y `ORCHESTRATOR_STATE_DIR` para personalizar el header y la carpeta donde se almacena el cursor.
+
+### 15.2 Uso básico
+
+```bash
+chmod +x scripts/poll_isp_connections.py
+./scripts/poll_isp_connections.py --lookback-hours 12
+```
+
+El job crea `.state/connections_provisioning.cursor` y guarda el último `created_at` procesado en UTC. Si querés revisar sin impactar GeoGrid:
+
+```bash
+./scripts/poll_isp_connections.py --dry-run --since 2025-11-13T00:00:00Z
+```
+
+### 15.3 Scheduling recomendado
+
+Ejemplo de cron cada 15 minutos:
+
+```cron
+*/15 * * * * cd /ruta/al/proyecto && source .env && ./scripts/poll_isp_connections.py >> logs/provisioning.log 2>&1
+```
+
+También podés envolverlo en systemd o Docker; el job es idempotente mientras conserve el cursor.
+
+### 15.4 Extensiones
+
+- Reaccionar a `delete_connection` para disparar `/decommission/customer`.
+- Emitir métricas Prometheus propias (altas detectadas, errores por corrida).
+- Publicar los eventos procesados en una cola para análisis posterior.

@@ -11,6 +11,9 @@ __pycache__/
 .venv/
 venv/
 
+# Runtime job state
+.state/
+
 # Editor configs
 .vscode/
 .idea/
