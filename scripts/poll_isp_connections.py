@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
+from dotenv import load_dotenv
 
 
 logging.basicConfig(
@@ -31,6 +32,7 @@ UTC = timezone.utc
 DEFAULT_LOOKBACK_HOURS = 6
 DEFAULT_STATE_DIR = Path(os.getenv("ORCHESTRATOR_STATE_DIR", ".state"))
 STATE_FILE = DEFAULT_STATE_DIR / "connections_provisioning.cursor"
+STATUS_FILE = DEFAULT_STATE_DIR / "connections_provisioning.status.json"
 
 REQUIRED_ISP_VARS = [
     "ISP_BASE_URL",
@@ -61,7 +63,7 @@ def _parse_iso(value: str) -> datetime:
 
 
 def _format_param_timestamp(dt: datetime) -> str:
-    return dt.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def load_cursor() -> Optional[datetime]:
@@ -82,6 +84,14 @@ def save_cursor(ts: datetime) -> None:
     STATE_FILE.write_text(ts.astimezone(UTC).isoformat(), encoding="utf-8")
 
 
+def write_status(payload: Dict[str, Any]) -> None:
+    _ensure_state_dir()
+    try:
+        STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.warning("Unable to persist status file: %s", exc)
+
+
 def isp_headers() -> Dict[str, str]:
     headers = {
         "Content-Type": "application/json",
@@ -100,18 +110,28 @@ def fetch_provisioning_logs(
     *,
     base_url: str,
     since: datetime,
-) -> List[Dict[str, Any]]:
+) -> tuple[List[Dict[str, Any]], bool]:
     params = {"created_at": _format_param_timestamp(since)}
     url = f"{base_url.rstrip('/')}/connections/connections_provisioning_logs"
     logger.info("Consultando ISP logs desde %s", params["created_at"])
     response = client.get(url, params=params, headers=isp_headers(), timeout=15.0)
+    provisioning_disabled = False
+    if response.status_code == 400:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = response.text
+        if isinstance(payload, dict) and payload.get("message") == "messages.provisioning_logs_disabled_alert":
+            logger.warning("ISP reporta provisioning_logs deshabilitado; finalizar job sin errores.")
+            provisioning_disabled = True
+            return [], provisioning_disabled
     response.raise_for_status()
     data = response.json()
     if not isinstance(data, list):
         raise ValueError(
             f"Respuesta inesperada en provisioning_logs: {json.dumps(data)[:200]}"
         )
-    return data
+    return data, provisioning_disabled
 
 
 def _movement_timestamp(entry: Dict[str, Any]) -> Optional[datetime]:
@@ -163,7 +183,7 @@ def process_logs(
     *,
     orchestrator_base: str,
     user_header: str,
-) -> Optional[datetime]:
+) -> tuple[Optional[datetime], int, int]:
     max_ts: Optional[datetime] = None
     processed = 0
     skipped = 0
@@ -197,7 +217,7 @@ def process_logs(
                 )
                 continue
     logger.info("Procesados=%s | omitidos=%s", processed, skipped)
-    return max_ts
+    return max_ts, processed, skipped
 
 
 def validate_env() -> None:
@@ -229,50 +249,99 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_arg_parser().parse_args()
-    validate_env()
-
-    orchestrator_base = os.getenv("ORCHESTRATOR_BASE_URL", "http://localhost:8000")
-    user_header = os.getenv("ORCHESTRATOR_USER_HEADER", "X-Orchestrator-User")
-    isp_base = _read_env("ISP_BASE_URL").rstrip("/")
-
-    cursor_ts = load_cursor()
-    if args.since:
-        cursor_ts = _parse_iso(args.since)
-    if cursor_ts is None:
-        cursor_ts = datetime.now(tz=UTC) - timedelta(hours=args.lookback_hours)
-
-    with httpx.Client() as isp_client:
-        logs = fetch_provisioning_logs(isp_client, base_url=isp_base, since=cursor_ts)
-
-    if not logs:
-        logger.info("Sin movimientos recientes desde %s", cursor_ts.isoformat())
-        return
-
-    max_ts: Optional[datetime]
-    if args.dry_run:
-        for entry in logs:
-            logger.info(
-                "Movimiento %s @ %s :: connection_id=%s customer_id=%s",
-                entry.get("movement_type"),
-                entry.get("created_at"),
-                entry.get("connection_id"),
-                entry.get("customer_id"),
-            )
-        max_ts = max(
-            filter(None, (_movement_timestamp(entry) for entry in logs)),
-            default=None,
-        )
+    dotenv_path = os.getenv("ORCHESTRATOR_DOTENV_PATH", ".env")
+    if Path(dotenv_path).exists():
+        load_dotenv(dotenv_path, override=False)
     else:
-        max_ts = process_logs(
-            logs,
-            orchestrator_base=orchestrator_base,
-            user_header=user_header,
-        )
+        # intenta cargar desde la raíz sólo si existe
+        load_dotenv(override=False)
+    args = build_arg_parser().parse_args()
+    run_started = datetime.now(tz=UTC)
+    status_payload: Dict[str, Any] = {
+        "run_started": run_started.isoformat(),
+        "dry_run": bool(args.dry_run),
+        "lookback_hours": args.lookback_hours,
+        "result": "running",
+        "processed": 0,
+        "skipped": 0,
+        "message": None,
+        "cursor_before": None,
+        "cursor_after": None,
+    }
+    try:
+        validate_env()
 
-    if max_ts:
-        save_cursor(max_ts)
-        logger.info("Cursor actualizado a %s", max_ts.isoformat())
+        orchestrator_base = os.getenv("ORCHESTRATOR_BASE_URL", "http://localhost:8000")
+        user_header = os.getenv("ORCHESTRATOR_USER_HEADER", "X-Orchestrator-User")
+        isp_base = _read_env("ISP_BASE_URL").rstrip("/")
+
+        cursor_ts = load_cursor()
+        if args.since:
+            cursor_ts = _parse_iso(args.since)
+        if cursor_ts is None:
+            cursor_ts = datetime.now(tz=UTC) - timedelta(hours=args.lookback_hours)
+        status_payload["cursor_before"] = cursor_ts.isoformat()
+
+        with httpx.Client() as isp_client:
+            logs, provisioning_disabled = fetch_provisioning_logs(
+                isp_client, base_url=isp_base, since=cursor_ts
+            )
+
+        if provisioning_disabled:
+            status_payload["result"] = "warning"
+            status_payload["message"] = "provisioning_logs_disabled"
+            status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
+            write_status(status_payload)
+            return
+
+        if not logs:
+            logger.info("Sin movimientos recientes desde %s", cursor_ts.isoformat())
+            status_payload["result"] = "ok"
+            status_payload["message"] = "sin_movimientos"
+            status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
+            write_status(status_payload)
+            return
+
+        if args.dry_run:
+            for entry in logs:
+                logger.info(
+                    "Movimiento %s @ %s :: connection_id=%s customer_id=%s",
+                    entry.get("movement_type"),
+                    entry.get("created_at"),
+                    entry.get("connection_id"),
+                    entry.get("customer_id"),
+                )
+            max_ts = max(
+                filter(None, (_movement_timestamp(entry) for entry in logs)),
+                default=None,
+            )
+            processed = sum(1 for entry in logs if entry.get("movement_type") == "create_connection" and entry.get("connection_id") is not None)
+            skipped = len(logs) - processed
+        else:
+            max_ts, processed, skipped = process_logs(
+                logs,
+                orchestrator_base=orchestrator_base,
+                user_header=user_header,
+            )
+
+        status_payload["processed"] = processed
+        status_payload["skipped"] = skipped
+        status_payload["result"] = "ok"
+        status_payload["message"] = "movimientos_procesados"
+
+        if max_ts:
+            save_cursor(max_ts)
+            logger.info("Cursor actualizado a %s", max_ts.isoformat())
+            status_payload["cursor_after"] = max_ts.isoformat()
+
+        status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
+        write_status(status_payload)
+    except Exception as exc:
+        status_payload["result"] = "error"
+        status_payload["message"] = str(exc)
+        status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
+        write_status(status_payload)
+        raise
 
 
 if __name__ == "__main__":

@@ -435,6 +435,8 @@ El job crea `.state/connections_provisioning.cursor` y guarda el último `create
 ./scripts/poll_isp_connections.py --dry-run --since 2025-11-13T00:00:00Z
 ```
 
+Cada ejecución también escribe un resumen en `.state/connections_provisioning.status.json` (inicio/fin, cantidad procesada, mensajes de warning). Ese archivo puede leerse desde Grafana o incluido en informes para demostrar cuándo corrió por última vez.
+
 ### 15.3 Scheduling recomendado
 
 Ejemplo de cron cada 15 minutos:
