@@ -39,6 +39,7 @@ logger = logging.getLogger("orchestrator")
 
 REQUEST_ID_HEADER = os.getenv("ORCHESTRATOR_REQUEST_ID_HEADER", "X-Request-ID")
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
+connection_ctx: ContextVar[Dict[str, Any]] = ContextVar("connection_ctx", default={})
 
 
 class RequestIdLoggingFilter(logging.Filter):
@@ -47,12 +48,19 @@ class RequestIdLoggingFilter(logging.Filter):
         return True
 
 
-logging.getLogger().addFilter(RequestIdLoggingFilter())
+_request_id_filter = RequestIdLoggingFilter()
+root_logger = logging.getLogger()
+root_logger.addFilter(_request_id_filter)
+for handler in root_logger.handlers:
+    handler.addFilter(_request_id_filter)
+uvicorn_logger = logging.getLogger("uvicorn.error")
+uvicorn_logger.addFilter(_request_id_filter)
 
 class CustomerSyncRequest(BaseModel):
     customer_id: Optional[int] = Field(
         default=None, ge=1, description="Identifier of the ISP customer"
     )
+    customer_name: Optional[str] = Field(default=None, description="Nombre del cliente (opcional)")
     connection_code: Optional[str] = Field(
         default=None,
         min_length=1,
@@ -553,6 +561,18 @@ ZONE_BASE_COORDINATES: Dict[str, Tuple[float, float]] = {
     "Guiñazú": (-31.2861, -64.1736),
     "Villa Test": (-31.1, -64.0),
 }
+
+
+def _parse_iso8601(value: str) -> datetime:
+    cleaned = value.strip()
+    if cleaned.endswith("Z"):
+        cleaned = f"{cleaned[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(cleaned)
+    except ValueError:
+        logger.debug("Invalid timestamp for customer event: %s", value)
+        return datetime.now(timezone.utc)
+
 
 def _as_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
@@ -1605,15 +1625,31 @@ _seed_synthetic_customer_events()
 
 def record_incident(kind: str, detail: Dict[str, Any]) -> None:
     detail_copy = dict(detail) if detail else {}
+    ctx = connection_ctx.get({})
+    logger.info("record_incident ctx=%s detail=%s", ctx, detail_copy)
+    if ctx:
+        if "connection_id" not in detail_copy and ctx.get("connection_id") is not None:
+            detail_copy["connection_id"] = str(ctx["connection_id"])
+        if "connection_code" not in detail_copy and ctx.get("connection_code"):
+            detail_copy["connection_code"] = ctx["connection_code"]
     customer_id = detail_copy.get("customer_id")
     customer_name = detail_copy.get("customer_name")
+    if customer_name:
+        detail_copy.setdefault("customer_name", customer_name)
     if not customer_name and customer_id is not None:
         customer_name = _lookup_customer_name(customer_id)
         if customer_name:
             detail_copy.setdefault("customer_name", customer_name)
-    detail_copy["customer_label"] = _format_customer_label(
-        detail_copy.get("customer_id"), detail_copy.get("customer_name")
-    )
+    if not detail_copy.get("customer_name") and ctx.get("customer_name"):
+        detail_copy["customer_name"] = ctx.get("customer_name")
+    connection_label = detail_copy.get("connection_id") or ctx.get("connection_id")
+    if connection_label is not None:
+        name_component = detail_copy.get("customer_name") or detail_copy.get("customer_id")
+        detail_copy["customer_label"] = f"{connection_label} - {name_component or ''}".strip()
+    else:
+        detail_copy["customer_label"] = _format_customer_label(
+            detail_copy.get("customer_id"), detail_copy.get("customer_name")
+        )
     entry = {
         "incident_id": str(uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1657,17 +1693,6 @@ def record_audit(entry: AuditEntry) -> None:
         persistence_store.purge_audits()
     except Exception as exc:
         logger.error("Failed to persist audit entry: %s", exc)
-
-
-def _parse_iso8601(value: str) -> datetime:
-    cleaned = value.strip()
-    if cleaned.endswith("Z"):
-        cleaned = f"{cleaned[:-1]}+00:00"
-    try:
-        return datetime.fromisoformat(cleaned)
-    except ValueError:
-        logger.debug("Invalid timestamp for customer event: %s", value)
-        return datetime.now(timezone.utc)
 
 
 def _filter_customer_events(
@@ -1812,17 +1837,46 @@ def _is_blank(value: Any) -> bool:
     return False
 
 
-def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
+def ensure_customer_ready(
+    customer: Dict[str, Any],
+    action: str,
+    connection_context: Optional[Dict[str, Any]] = None,
+) -> None:
     customer_id = customer.get("customer_id")
     status_value = str(customer.get("status") or "").strip().lower()
+    customer_name = customer.get("name") or customer.get("customer_name")
+    if not customer_name:
+        nested_customer = customer.get("customer")
+        if isinstance(nested_customer, dict):
+            customer_name = nested_customer.get("name")
+    if not customer_name:
+        connection_detail = customer.get("connection")
+        if isinstance(connection_detail, dict):
+            nested_customer = connection_detail.get("customer")
+            if isinstance(nested_customer, dict):
+                customer_name = nested_customer.get("name")
     if status_value and status_value not in ALLOWED_CUSTOMER_STATUS:
+        connection_id_hint = customer.get("connection_id_hint") or customer.get("connection_id")
+        connection_code_hint = customer.get("connection_code_hint") or customer.get("connection_code")
+        metadata = _connection_metadata_snapshot(
+            customer,
+            fallback_code=connection_code_hint,
+            fallback_id=connection_id_hint,
+        )
+        if connection_context:
+            if connection_context.get("connection_id") is not None:
+                metadata["connection_id"] = str(connection_context["connection_id"])
+            if connection_context.get("connection_code"):
+                metadata["connection_code"] = connection_context["connection_code"]
         record_incident(
             "automation_not_allowed",
             {
                 "customer_id": customer_id,
+                "customer_name": customer_name,
                 "action": action,
                 "reason": "status",
                 "status": status_value,
+                **metadata,
             },
         )
         raise HTTPException(
@@ -1838,15 +1892,29 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
     if AUTOMATION_MIN_START_TS is not None:
         activation_ts = _customer_activation_timestamp(customer)
         if activation_ts is None or activation_ts < AUTOMATION_MIN_START_TS:
+            connection_id_hint = customer.get("connection_id_hint") or customer.get("connection_id")
+            connection_code_hint = customer.get("connection_code_hint") or customer.get("connection_code")
+            metadata = _connection_metadata_snapshot(
+                customer,
+                fallback_code=connection_code_hint,
+                fallback_id=connection_id_hint,
+            )
+            if connection_context:
+                if connection_context.get("connection_id"):
+                    metadata.setdefault("connection_id", str(connection_context["connection_id"]))
+                if connection_context.get("connection_code"):
+                    metadata.setdefault("connection_code", connection_context["connection_code"])
             record_incident(
                 "automation_not_allowed",
                 {
-                    "customer_id": customer_id,
-                    "action": action,
-                    "reason": "cutoff",
-                    "activation_ts": activation_ts.isoformat() if activation_ts else None,
-                    "cutoff": AUTOMATION_MIN_START_TS.isoformat(),
-                },
+                "customer_id": customer_id,
+                "customer_name": customer_name,
+                "action": action,
+                "reason": "cutoff",
+                "activation_ts": activation_ts.isoformat() if activation_ts else None,
+                "cutoff": AUTOMATION_MIN_START_TS.isoformat(),
+                **metadata,
+            },
             )
             raise HTTPException(
                 status_code=status.HTTP_412_PRECONDITION_FAILED,
@@ -1865,12 +1933,30 @@ def ensure_customer_ready(customer: Dict[str, Any], action: str) -> None:
         if _is_blank(customer.get(field))
     ]
     if missing_fields:
+        connection_id_hint = customer.get("connection_id_hint") or customer.get("connection_id")
+        connection_code_hint = customer.get("connection_code_hint") or customer.get("connection_code")
+        metadata = _connection_metadata_snapshot(
+            customer,
+            fallback_code=connection_code_hint,
+            fallback_id=connection_id_hint,
+        )
+        if connection_context:
+            if connection_context.get("connection_id"):
+                metadata.setdefault("connection_id", str(connection_context["connection_id"]))
+            if connection_context.get("connection_code"):
+                metadata.setdefault("connection_code", connection_context["connection_code"])
+        if connection_id_hint is not None:
+            metadata.setdefault("connection_id", str(connection_id_hint))
+        if connection_code_hint:
+            metadata.setdefault("connection_code", connection_code_hint)
         record_incident(
             "missing_fields",
             {
                 "customer_id": customer_id,
+                "customer_name": customer_name,
                 "action": action,
                 "missing": missing_fields,
+                **metadata,
             },
         )
         raise HTTPException(
@@ -2373,14 +2459,50 @@ async def sync_customer(
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     resolved_customer_id: Optional[int] = payload.customer_id
+    ctx_token = connection_ctx.set(
+        {
+            "connection_id": payload.connection_id,
+            "connection_code": payload.connection_code,
+            "customer_name": payload.customer_name,
+        }
+    )
     try:
+        logger.info(
+            "Sync request context connection_id=%s connection_code=%s",
+            payload.connection_id,
+            payload.connection_code,
+        )
         customer = await _fetch_customer_record(
             settings,
             customer_id=payload.customer_id,
             connection_code=payload.connection_code,
             connection_id=payload.connection_id,
         )
-        ensure_customer_ready(customer, action="sync")
+        _inject_connection_context(
+            customer,
+            connection_id=payload.connection_id,
+            connection_code=payload.connection_code,
+            customer_name=payload.customer_name,
+        )
+        _inject_connection_context(
+            customer,
+            connection_id=payload.connection_id,
+            connection_code=payload.connection_code,
+        )
+        _inject_connection_context(
+            customer,
+            connection_id=payload.connection_id,
+            connection_code=payload.connection_code,
+        )
+        ensure_customer_ready(
+            customer,
+            action="sync",
+            connection_context={
+                "connection_id": payload.connection_id,
+                "connection_code": payload.connection_code,
+                "customer_name": payload.customer_name,
+            },
+        )
         resolved_customer_id = _resolved_customer_id(customer, payload.customer_id)
 
         cliente_payload = _build_geogrid_cliente_payload(customer)
@@ -2448,6 +2570,8 @@ async def sync_customer(
         )
         logger.exception("Unhandled error during customer sync")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
+    finally:
+        connection_ctx.reset(ctx_token)
 
 
 @app.post(
@@ -2466,6 +2590,9 @@ async def provision_onu(
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
     resolved_customer_id: Optional[int] = payload.customer_id
 
+    ctx_token = connection_ctx.set(
+        {"connection_id": payload.connection_id, "connection_code": payload.connection_code}
+    )
     try:
         customer = await _fetch_customer_record(
             settings,
@@ -2473,7 +2600,11 @@ async def provision_onu(
             connection_code=payload.connection_code,
             connection_id=payload.connection_id,
         )
-        ensure_customer_ready(customer, action="provision")
+        ensure_customer_ready(
+            customer,
+            action="provision",
+            connection_context={"connection_id": payload.connection_id, "connection_code": payload.connection_code},
+        )
         ensure_alignment(customer, payload)
         resolved_customer_id = _resolved_customer_id(customer, payload.customer_id)
         cliente_payload = _build_geogrid_cliente_payload(customer)
@@ -2614,6 +2745,8 @@ async def provision_onu(
         )
         logger.exception("Unhandled error during provisioning")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
+    finally:
+        connection_ctx.reset(ctx_token)
 
 
 @app.post(
@@ -2631,6 +2764,9 @@ async def decommission_customer(
     timestamp = datetime.now(timezone.utc).isoformat()
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
 
+    ctx_token = connection_ctx.set(
+        {"connection_id": payload.connection_id, "connection_code": payload.connection_code}
+    )
     try:
         customer = await _fetch_customer_record(
             settings,
@@ -2778,6 +2914,8 @@ async def decommission_customer(
         )
         logger.exception("Unhandled error during decommission")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
+    finally:
+        connection_ctx.reset(ctx_token)
 
 
 @app.get("/config", summary="Inspect orchestrator runtime configuration")
@@ -3376,16 +3514,52 @@ def _customer_connection_identifier(
 
 
 def _connection_metadata_snapshot(
-    customer: Dict[str, Any], fallback_code: Optional[str] = None
+    customer: Dict[str, Any],
+    fallback_code: Optional[str] = None,
+    fallback_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     metadata: Dict[str, Any] = {}
-    identifier = _customer_connection_identifier(customer, fallback_code)
+    override = customer.get("_connection_metadata_override") or {}
+    if override:
+        metadata.update({k: v for k, v in override.items() if v is not None})
+        if override.get("customer_name"):
+            metadata.setdefault("customer_name", override.get("customer_name"))
+
+    hinted_id = customer.get("connection_id_hint")
+    hinted_code = customer.get("connection_code_hint")
+    identifier = _customer_connection_identifier(customer, fallback_code or hinted_code)
     if identifier:
         metadata["connection_id"] = identifier
-    code_value = _customer_connection_code(customer, fallback_code)
+    code_value = _customer_connection_code(customer, fallback_code or hinted_code)
     if code_value and code_value != identifier:
         metadata["connection_code"] = code_value
+    if "connection_id" not in metadata:
+        candidate = fallback_id or hinted_id
+        if candidate is not None:
+            metadata["connection_id"] = str(candidate)
     return metadata
+
+
+def _inject_connection_context(
+    customer: Dict[str, Any],
+    *,
+    connection_id: Optional[int] = None,
+    connection_code: Optional[str] = None,
+    customer_name: Optional[str] = None,
+) -> None:
+    override = customer.setdefault("_connection_metadata_override", {})
+    if connection_id is not None and not customer.get("connection_id"):
+        customer["connection_id"] = connection_id
+    if connection_id is not None:
+        customer.setdefault("connection_id_hint", connection_id)
+        override.setdefault("connection_id", str(connection_id))
+    if connection_code and not customer.get("connection_code"):
+        customer["connection_code"] = connection_code
+    if connection_code:
+        customer.setdefault("connection_code_hint", connection_code)
+        override.setdefault("connection_code", connection_code)
+    if customer_name:
+        override.setdefault("customer_name", customer_name)
 
 
 async def _fetch_customer_record(

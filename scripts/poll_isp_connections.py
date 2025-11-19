@@ -156,10 +156,13 @@ def sync_connection(
     orchestrator_base: str,
     user_header: str,
     connection_id: int,
+    customer_name: Optional[str] = None,
 ) -> None:
     url = f"{orchestrator_base.rstrip('/')}/sync/customer"
     headers = {"Content-Type": "application/json", user_header: "provisioning-job"}
     payload = {"connection_id": connection_id}
+    if customer_name:
+        payload["customer_name"] = customer_name
     response = client.post(url, json=payload, headers=headers, timeout=20.0)
     try:
         response.raise_for_status()
@@ -200,12 +203,18 @@ def process_logs(
             if connection_id is None:
                 skipped += 1
                 continue
+            logger.info(
+                "Procesando conexion=%s nombre=%s",
+                connection_id,
+                entry.get("customer_name"),
+            )
             try:
                 sync_connection(
                     orch_client,
                     orchestrator_base=orchestrator_base,
                     user_header=user_header,
                     connection_id=int(connection_id),
+                    customer_name=entry.get("customer_name"),
                 )
                 processed += 1
             except Exception:

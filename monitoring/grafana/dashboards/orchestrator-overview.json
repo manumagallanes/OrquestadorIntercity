@@ -301,8 +301,8 @@
             },
             "properties": [
               {
-                "id": "displayName",
-                "value": "ID"
+                "id": "custom.hidden",
+                "value": true
               }
             ]
           },
