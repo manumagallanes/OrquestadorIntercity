@@ -511,15 +511,24 @@ INTEGRATION_ERROR_COUNTER = Counter(
 PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
-REQUIRED_CUSTOMER_FIELDS: List[str] = [
+TRUE_VALUES = {"1", "true", "yes", "on"}
+COORDINATE_FIELDS = {"lat", "lng"}
+ALLOW_COORDINATE_FALLBACK = (
+    os.getenv("ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK", "false").strip().lower()
+    in TRUE_VALUES
+)
+
+CORE_CUSTOMER_FIELDS: List[str] = [
     "lat",
     "lng",
     "address",
+    "name",
+]
+OPTIONAL_NETWORK_FIELDS: List[str] = [
     "olt_id",
     "board",
     "pon",
     "onu_sn",
-    "connection_id",
     "plan_id",
     "ftthbox_id",
     "ftth_port_id",
@@ -1927,12 +1936,10 @@ def ensure_customer_ready(
                 },
             )
 
-    missing_fields = [
-        field
-        for field in REQUIRED_CUSTOMER_FIELDS
-        if _is_blank(customer.get(field))
+    core_missing = [
+        field for field in CORE_CUSTOMER_FIELDS if _is_blank(customer.get(field))
     ]
-    if missing_fields:
+    if core_missing:
         connection_id_hint = customer.get("connection_id_hint") or customer.get("connection_id")
         connection_code_hint = customer.get("connection_code_hint") or customer.get("connection_code")
         metadata = _connection_metadata_snapshot(
@@ -1955,16 +1962,45 @@ def ensure_customer_ready(
                 "customer_id": customer_id,
                 "customer_name": customer_name,
                 "action": action,
-                "missing": missing_fields,
+                "missing": core_missing,
                 **metadata,
             },
         )
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "message": "Customer has incomplete network metadata",
+        blocking_missing = [
+            field
+            for field in core_missing
+            if field not in COORDINATE_FIELDS or not ALLOW_COORDINATE_FALLBACK
+        ]
+        if blocking_missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Customer has incomplete network metadata",
+                    "customer_id": customer_id,
+                    "missing_fields": blocking_missing,
+                },
+            )
+    network_missing = [
+        field
+        for field in OPTIONAL_NETWORK_FIELDS
+        if _is_blank(customer.get(field))
+    ]
+    if network_missing:
+        connection_id_hint = customer.get("connection_id_hint") or customer.get("connection_id")
+        connection_code_hint = customer.get("connection_code_hint") or customer.get("connection_code")
+        metadata = _connection_metadata_snapshot(
+            customer,
+            fallback_code=connection_code_hint,
+            fallback_id=connection_id_hint,
+        )
+        record_incident(
+            "missing_network_keys",
+            {
                 "customer_id": customer_id,
-                "missing_fields": missing_fields,
+                "customer_name": customer_name,
+                "action": action,
+                "missing": network_missing,
+                **metadata,
             },
         )
 
@@ -2127,12 +2163,23 @@ def _customer_state(customer: Dict[str, Any]) -> str:
 
 
 def _customer_coordinates(customer: Dict[str, Any]) -> Tuple[float, float]:
-    lat = float(customer.get("lat"))
-    lon_raw = customer.get("lon")
-    if lon_raw is None:
-        lon_raw = customer.get("lng")
-    lon = float(lon_raw)
-    return lat, lon
+    lat_value = _safe_float(customer.get("lat"))
+    lon_source = customer.get("lon")
+    if lon_source is None:
+        lon_source = customer.get("lng")
+    lon_value = _safe_float(lon_source)
+
+    if lat_value is None or lon_value is None:
+        zone_name = _customer_zone(customer) or DEFAULT_ZONE_LABEL
+        fallback_lat, fallback_lon = _resolve_zone_coordinates(zone_name)
+        if lat_value is None:
+            lat_value = fallback_lat if fallback_lat is not None else DEFAULT_COORDINATE_FALLBACK[0]
+        if lon_value is None:
+            lon_value = fallback_lon if fallback_lon is not None else DEFAULT_COORDINATE_FALLBACK[1]
+
+    if lat_value is None or lon_value is None:
+        raise ValueError("Unable to derive customer coordinates")
+    return lat_value, lon_value
 
 
 def _resolve_plan_name(customer: Dict[str, Any]) -> Optional[str]:
@@ -2506,9 +2553,50 @@ async def sync_customer(
         resolved_customer_id = _resolved_customer_id(customer, payload.customer_id)
 
         cliente_payload = _build_geogrid_cliente_payload(customer)
-        geogrid_id, action = await geogrid_service.upsert_cliente(
-            settings, cliente_payload, fetch_json
-        )
+        try:
+            geogrid_id, action = await geogrid_service.upsert_cliente(
+                settings, cliente_payload, fetch_json
+            )
+            fallback_mode = False
+        except HTTPException as geogrid_exc:
+            detail = _resolve_geogrid_error_detail(geogrid_exc)
+            if detail is None:
+                raise
+            record_incident(
+                "geogrid_unavailable",
+                {
+                    "customer_id": resolved_customer_id,
+                    "detail": detail,
+                    **_connection_metadata_snapshot(customer),
+                },
+            )
+            register_customer_event(
+                "alta",
+                customer=customer,
+                source="sync-fallback",
+                metadata={"reason": "geogrid_unavailable"},
+            )
+            geogrid_id = None
+            action = "pending"
+            fallback_mode = True
+        except Exception as geogrid_exc:
+            record_incident(
+                "geogrid_unavailable",
+                {
+                    "customer_id": resolved_customer_id,
+                    "detail": {"message": str(geogrid_exc)},
+                    **_connection_metadata_snapshot(customer),
+                },
+            )
+            register_customer_event(
+                "alta",
+                customer=customer,
+                source="sync-fallback",
+                metadata={"reason": "geogrid_exception"},
+            )
+            geogrid_id = None
+            action = "pending"
+            fallback_mode = True
         SYNC_COUNTER.labels(result=action).inc()
         resolve_incidents(
             customer_id=resolved_customer_id,
@@ -3829,3 +3917,8 @@ def _resolved_customer_id(customer: Dict[str, Any], fallback: Optional[int] = No
         return int(candidate) if candidate is not None else None
     except (TypeError, ValueError):
         return fallback
+def _resolve_geogrid_error_detail(exc: Exception) -> Optional[Dict[str, Any]]:
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict) and detail.get("service") == "geogrid":
+        return detail
+    return None

@@ -18,7 +18,13 @@
             "recovery_timeout_seconds": 45.0
           },
           "default_headers": {
-            "X-API-Key": "env:ISP_API_KEY"
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "api-key": "env:ISP_API_KEY",
+            "client-id": "env:ISP_CLIENT_ID",
+            "login-type": "env:ISP_LOGIN_TYPE",
+            "username": "env:ISP_USERNAME",
+            "Authorization": "env:ISP_BEARER"
           }
         }
       }

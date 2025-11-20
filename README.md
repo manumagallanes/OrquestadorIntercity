@@ -72,6 +72,7 @@ El campo `default_region` determina la región activa cuando no se indica otra e
 - `ISP_REGION`, `GEOGRID_REGION`: sustituyen la región por defecto de cada servicio.
 - `ISP_BASE_URL`, `GEOGRID_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON. Para entornos reales además debés definir `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_BEARER`, `GEOGRID_BEARER`.
 - `DRY_RUN`: fuerza el valor inicial del flag global `dry_run` (interpreta `true/false`, `1/0` o equivalentes).
+- `ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK`: cuando vale `true`, los clientes sin lat/lng reales no bloquean el flujo; se genera un incidente `missing_fields` pero se utilizan coordenadas de zona (o el fallback por defecto) para seguir alimentando GeoGrid y los paneles de Grafana.
 - Cualquier valor declarado como `env:VARIABLE` en los JSON debe definirse en el entorno del proceso antes de iniciar el orquestador.
 
 El endpoint `GET /config` expone la configuración efectiva con las sustituciones aplicadas, mientras que `POST /config` actualiza el flag `dry_run` en tiempo de ejecución.
@@ -452,3 +453,9 @@ También podés envolverlo en systemd o Docker; el job es idempotente mientras c
 - Reaccionar a `delete_connection` para disparar `/decommission/customer`.
 - Emitir métricas Prometheus propias (altas detectadas, errores por corrida).
 - Publicar los eventos procesados en una cola para análisis posterior.
+
+---
+
+## 16. Rama `orquestador-coordenadas`
+
+Cuando en ISP-Cube todavía no existe el inventario de cajas/puertos, podés trabajar sobre la rama `orquestador-coordenadas`. Allí el orquestador sólo exige los atributos básicos (nombre, dirección, lat/lng) y permite sincronizar altas aunque falten `olt_id`, `pon`, `ftthbox_id`, etc. Cada vez que detecta que esos campos aún no están cargados genera un incidente `missing_network_keys` pero no bloquea la creación del cliente en GeoGrid. Una vez que el plantel exterior cargue la información completa, basta con volver a la rama principal para reactivar las validaciones estrictas.
