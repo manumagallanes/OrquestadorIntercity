@@ -517,6 +517,10 @@ ALLOW_COORDINATE_FALLBACK = (
     os.getenv("ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK", "false").strip().lower()
     in TRUE_VALUES
 )
+ALLOW_MISSING_NETWORK_KEYS = (
+    os.getenv("ORCHESTRATOR_ALLOW_MISSING_NETWORK_KEYS", "false").strip().lower()
+    in TRUE_VALUES
+)
 
 CORE_CUSTOMER_FIELDS: List[str] = [
     "lat",
@@ -2003,6 +2007,15 @@ def ensure_customer_ready(
                 **metadata,
             },
         )
+        if not ALLOW_MISSING_NETWORK_KEYS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Customer has incomplete network metadata",
+                    "customer_id": customer_id,
+                    "missing_fields": network_missing,
+                },
+            )
 
     try:
         lat_raw = customer.get("lat")
