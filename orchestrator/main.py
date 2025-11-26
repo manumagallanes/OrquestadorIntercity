@@ -1663,19 +1663,27 @@ def record_incident(kind: str, detail: Dict[str, Any]) -> None:
         detail_copy["customer_label"] = _format_customer_label(
             detail_copy.get("customer_id"), detail_copy.get("customer_name")
         )
-    entry = {
+    new_entry = {
         "incident_id": str(uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "kind": kind,
         **detail_copy,
     }
-    INCIDENT_LOG.append(entry)
+    # evita duplicados idénticos consecutivos
+    if INCIDENT_LOG:
+        last = INCIDENT_LOG[-1]
+        comparable_keys = set(new_entry.keys()) - {"incident_id", "timestamp"}
+        if all(last.get(k) == new_entry.get(k) for k in comparable_keys):
+            logger.info("Incidente duplicado detectado; no se registra nuevamente.")
+            return
+
+    INCIDENT_LOG.append(new_entry)
     INCIDENT_COUNTER.labels(kind=kind).inc()
     INCIDENT_GAUGE.set(len(INCIDENT_LOG))
     try:
-        persistence_store.save_incident(entry)
+        persistence_store.save_incident(new_entry)
     except Exception as exc:
-        logger.error("Failed to persist incident %s: %s", entry.get("incident_id"), exc)
+        logger.error("Failed to persist incident %s: %s", new_entry.get("incident_id"), exc)
     logger.warning("Incident recorded %s :: %s", kind, detail)
 
 
@@ -2017,61 +2025,67 @@ def ensure_customer_ready(
                 },
             )
 
-    try:
-        lat_raw = customer.get("lat")
-        lon_raw = customer.get("lon")
-        if lon_raw is None:
-            lon_raw = customer.get("lng")
-        lat = float(lat_raw)
-        lon = float(lon_raw)
-    except (TypeError, ValueError):
-        record_incident(
-            "invalid_coordinates",
-            {
-                "customer_id": customer_id,
-                "action": action,
-                "lat": customer.get("lat"),
-                "lon": customer.get("lon") or customer.get("lng"),
-                "reason": "non_numeric",
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "message": "Customer coordinates are invalid",
-                "customer_id": customer_id,
-                "lat": customer.get("lat"),
-                "lon": customer.get("lon") or customer.get("lng"),
-                "reason": "non_numeric",
-            },
-        )
+    lat = None
+    lon = None
+    lat_raw = customer.get("lat")
+    lon_raw = customer.get("lon")
+    if lon_raw is None:
+        lon_raw = customer.get("lng")
+    coord_missing = lat_raw in (None, "", []) or lon_raw in (None, "", [])
 
-    if not (
-        CORDOBA_LAT_RANGE[0] <= lat <= CORDOBA_LAT_RANGE[1]
-        and CORDOBA_LON_RANGE[0] <= lon <= CORDOBA_LON_RANGE[1]
-    ):
-        record_incident(
-            "invalid_coordinates",
-            {
-                "customer_id": customer_id,
-                "action": action,
-                "lat": lat,
-                "lon": lon,
-                "allowed_lat_range": CORDOBA_LAT_RANGE,
-                "allowed_lon_range": CORDOBA_LON_RANGE,
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "message": "Customer coordinates outside allowed coverage area",
-                "customer_id": customer_id,
-                "lat": lat,
-                "lon": lon,
-                "allowed_lat_range": CORDOBA_LAT_RANGE,
-                "allowed_lon_range": CORDOBA_LON_RANGE,
-            },
-        )
+    if not (ALLOW_COORDINATE_FALLBACK and coord_missing):
+        try:
+            lat = float(lat_raw)
+            lon = float(lon_raw)
+        except (TypeError, ValueError):
+            record_incident(
+                "invalid_coordinates",
+                {
+                    "customer_id": customer_id,
+                    "action": action,
+                    "lat": customer.get("lat"),
+                    "lon": customer.get("lon") or customer.get("lng"),
+                    "reason": "non_numeric",
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Customer coordinates are invalid",
+                    "customer_id": customer_id,
+                    "lat": customer.get("lat"),
+                    "lon": customer.get("lon") or customer.get("lng"),
+                    "reason": "non_numeric",
+                },
+            )
+
+    if lat is not None and lon is not None:
+        if not (
+            CORDOBA_LAT_RANGE[0] <= lat <= CORDOBA_LAT_RANGE[1]
+            and CORDOBA_LON_RANGE[0] <= lon <= CORDOBA_LON_RANGE[1]
+        ):
+            record_incident(
+                "invalid_coordinates",
+                {
+                    "customer_id": customer_id,
+                    "action": action,
+                    "lat": lat,
+                    "lon": lon,
+                    "allowed_lat_range": CORDOBA_LAT_RANGE,
+                    "allowed_lon_range": CORDOBA_LON_RANGE,
+                },
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Customer coordinates outside allowed coverage area",
+                    "customer_id": customer_id,
+                    "lat": lat,
+                    "lon": lon,
+                    "allowed_lat_range": CORDOBA_LAT_RANGE,
+                    "allowed_lon_range": CORDOBA_LON_RANGE,
+                },
+            )
 
 
 NETWORK_KEYS: List[str] = ["olt_id", "board", "pon", "onu_sn"]
@@ -2503,7 +2517,32 @@ async def fetch_json(
         )
     if response.status_code == status.HTTP_204_NO_CONTENT:
         return {}
-    return response.json()
+    if response.status_code >= 300:
+        detail = _safe_response_payload(response)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "service": service,
+                "region": resolved_region,
+                "upstream_detail": detail,
+                "status_code": response.status_code,
+            },
+        )
+    try:
+        return response.json()
+    except ValueError:
+        detail = _safe_response_payload(response)
+        INTEGRATION_ERROR_COUNTER.labels(service=service, status="invalid_json").inc()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "service": service,
+                "region": resolved_region,
+                "message": "Invalid JSON payload from upstream",
+                "upstream_detail": detail,
+                "status_code": response.status_code,
+            },
+        )
 
 
 @app.post(

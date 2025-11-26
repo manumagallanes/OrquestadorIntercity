@@ -190,6 +190,7 @@ def process_logs(
     max_ts: Optional[datetime] = None
     processed = 0
     skipped = 0
+    seen_connections: set[int] = set()
     with httpx.Client() as orch_client:
         for entry in sorted(logs, key=_movement_timestamp):
             movement_type = entry.get("movement_type")
@@ -203,9 +204,22 @@ def process_logs(
             if connection_id is None:
                 skipped += 1
                 continue
+            try:
+                connection_id_int = int(connection_id)
+            except (TypeError, ValueError):
+                skipped += 1
+                continue
+            if connection_id_int in seen_connections:
+                skipped += 1
+                logger.info(
+                    "Omitiendo conexion duplicada en el batch connection_id=%s",
+                    connection_id_int,
+                )
+                continue
+            seen_connections.add(connection_id_int)
             logger.info(
                 "Procesando conexion=%s nombre=%s",
-                connection_id,
+                connection_id_int,
                 entry.get("customer_name"),
             )
             try:
@@ -213,7 +227,7 @@ def process_logs(
                     orch_client,
                     orchestrator_base=orchestrator_base,
                     user_header=user_header,
-                    connection_id=int(connection_id),
+                    connection_id=connection_id_int,
                     customer_name=entry.get("customer_name"),
                 )
                 processed += 1
