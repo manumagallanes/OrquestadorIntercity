@@ -73,6 +73,8 @@ El campo `default_region` determina la región activa cuando no se indica otra e
 - `ISP_BASE_URL`, `GEOGRID_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON. Para entornos reales además debés definir `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_BEARER`, `GEOGRID_BEARER`.
 - `DRY_RUN`: fuerza el valor inicial del flag global `dry_run` (interpreta `true/false`, `1/0` o equivalentes).
 - `ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK`: cuando vale `true`, los clientes sin lat/lng reales no bloquean el flujo; se genera un incidente `missing_fields` pero se utilizan coordenadas de zona (o el fallback por defecto) para seguir alimentando GeoGrid y los paneles de Grafana.
+- `ORCHESTRATOR_ALLOW_MISSING_NETWORK_KEYS`: cuando vale `true`, las faltas de OLT/board/pon/ONU/caja/puerto no bloquean; se registra `missing_network_keys` y el flujo continúa. En `false` (modo estricto) se responde 422.
+- `ORCHESTRATOR_MIN_START_DATE`: fecha de corte opcional (`YYYY-MM-DD`). Los movimientos anteriores devuelven 412 `automation_not_allowed` y no se procesan.
 - Cualquier valor declarado como `env:VARIABLE` en los JSON debe definirse en el entorno del proceso antes de iniciar el orquestador.
 
 El endpoint `GET /config` expone la configuración efectiva con las sustituciones aplicadas, mientras que `POST /config` actualiza el flag `dry_run` en tiempo de ejecución.
@@ -103,6 +105,28 @@ El comando compila imágenes, crea la red interna y lanza todos los servicios se
 - UI Streamlit: http://localhost:8501
 - Grafana: http://localhost:3000 (usuario `admin`, contraseña `admin`)
 - Prometheus: http://localhost:9090
+
+### 5.4 Modos de validación (estricto vs. relajado)
+
+- Estricto (recomendado en producción): no definas los flags o ponelos en `false`. Faltas de lat/lon o de claves de red devuelven 422 y se registran incidentes.
+- Relajado (para evidencias o datos incompletos): `ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK=true` y `ORCHESTRATOR_ALLOW_MISSING_NETWORK_KEYS=true`. El flujo sigue aunque falten coordenadas o identificadores de red; se registran incidentes y se usan coordenadas de zona como fallback.
+- Cutoff opcional: `ORCHESTRATOR_MIN_START_DATE=YYYY-MM-DD` para ignorar movimientos anteriores a la fecha de corte (412 `automation_not_allowed`).
+
+### 5.5 Job de polling ISP → Orquestador
+
+- Script: `scripts/poll_isp_connections.py`
+- Uso típico:
+  - Primera corrida o recuperación tras corte: `rm -f .state/connections_provisioning.cursor && ./scripts/poll_isp_connections.py --lookback-hours 24`
+  - Corrida acotada: `./scripts/poll_isp_connections.py --since "2025-11-22T00:00:00Z"`
+- Auto-ajuste: si el cursor está vacío o viejo, el job amplía el `lookback` para no perder movimientos (`--stale-threshold-hours`, `--max-lookback-on-stale`).
+- Cabeceras ISP: requiere `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_USERNAME`, `ISP_BEARER` en el entorno. Si las credenciales expiran, devolverá 401.
+- Salida: escribe en `logs/poll_job.log`, mantiene `./.state/connections_provisioning.cursor` y un estado JSON en `./.state/connections_provisioning.status.json`.
+
+### 5.6 Alertas, errores y deduplicación
+
+- Incidentes duplicados consecutivos se omiten para reducir ruido. Cualquier HTML/3xx o JSON inválido de ISP/GeoGrid se devuelve como 502 controlado (sin 500).
+- El poller ignora conexiones repetidas dentro del mismo batch para evitar re-llamadas innecesarias.
+- 404 en `/sync/customer` indican que ISP no devolvió la conexión solicitada; revisa la API con `connection_id` o `connection_code` y, si no existe, excluye esos IDs del feed o resolvelos manualmente.
 
 ### 5.3 Reinicialización del estado
 
