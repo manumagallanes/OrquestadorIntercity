@@ -116,6 +116,14 @@ class ProvisionRequest(BaseModel):
         return self
 
 
+class GeoGridAttendRequest(BaseModel):
+    codigo_integracion: str = Field(..., min_length=1)
+    id_porta: int = Field(..., ge=1)
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    id_item_rede_cliente: Optional[int] = Field(default=None, ge=1)
+
+
 class DecommissionRequest(BaseModel):
     customer_id: Optional[int] = Field(default=None, ge=1)
     connection_code: Optional[str] = Field(
@@ -2258,15 +2266,33 @@ def _build_geogrid_cliente_payload(customer: Dict[str, Any]) -> Dict[str, Any]:
     if customer.get("user"):
         observaciones.append(f"PPPoE: {customer.get('user')}")
     observacion = " | ".join(observaciones) if observaciones else None
+    doc_raw = str(customer.get("doc_number") or "").strip()
+    doc_value = "".join(ch for ch in doc_raw if ch.isdigit())
+    if not doc_value:
+        doc_value = "00000000000"
+    phone_raw = str(customer.get("extra1") or customer.get("phone") or "").strip()
+    phone_value = "".join(ch for ch in phone_raw if ch.isdigit())
+    if not phone_value:
+        phone_value = "0000000000"
+    bairro_value = zone or ""
+    cep_value = str(customer.get("postal_code") or customer.get("cep") or "").strip()
+    if cep_value is None:
+        cep_value = ""
     return {
         "codigoIntegracao": codigo,
+        "tipo": "F",
         "nome": display_name,
+        "cpfCnpj": doc_value,
+        "telefone": phone_value,
+        "cep": cep_value,
         "endereco": customer.get("address") or "",
-        "cidade": _customer_city(customer) or zone,
-        "estado": _customer_state(customer) or "NA",
+        "bairro": bairro_value,
+        "cidade": _customer_city(customer) or zone or "",
+        "estado": "RS",
         "latitude": lat,
         "longitude": lon,
-        "observacao": observacion,
+        "observacao": observacion or "",
+        "consultarResidencias": "S",
     }
 
 
@@ -2712,6 +2738,98 @@ async def sync_customer(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
     finally:
         connection_ctx.reset(ctx_token)
+
+
+@app.post(
+    "/geogrid/attend",
+    status_code=status.HTTP_200_OK,
+    summary="Atender cliente en GeoGrid (usa idPorta e idCliente)",
+)
+async def geogrid_attend(
+    payload: GeoGridAttendRequest,
+    settings: EnvConfig = Depends(get_settings),
+) -> Dict[str, Any]:
+    """
+    Flujo recomendado por GeoGrid:
+    1) Crear cliente con codigoIntegracion.
+    2) Obtener idCliente con /clientes/integrado/{codigoIntegracao}.
+    3) Llamar a /integracao/atender con idPorta, idCliente y coords opcionales.
+    """
+    geogrid_cliente = await geogrid_service.get_cliente_by_codigo_integrado(
+        settings, payload.codigo_integracion, fetch_json
+    )
+    if not geogrid_cliente:
+        geogrid_cliente = await geogrid_service.get_cliente_by_codigo(
+            settings, payload.codigo_integracion, fetch_json
+        )
+    if not geogrid_cliente:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "message": "Cliente no encontrado en GeoGrid",
+                "codigo_integracion": payload.codigo_integracion,
+            },
+        )
+
+    geogrid_id = geogrid_cliente.get("id")
+    # Determinar el ponto de acesso: si no viene, crearlo con label "<codigo> - <cliente>"
+    access_point_id = payload.id_item_rede_cliente
+    if access_point_id is None:
+        if payload.latitude is None or payload.longitude is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "Faltan coordenadas para crear el ponto de acesso",
+                    "fields": ["latitude", "longitude"],
+                },
+            )
+        pasta_env = os.getenv("GEOGRID_PASTA_ID")
+        if not pasta_env:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Falta GEOGRID_PASTA_ID en entorno para crear el ponto de acesso"},
+            )
+        try:
+            pasta_id = int(pasta_env)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "GEOGRID_PASTA_ID inválido"},
+            )
+        customer_name = geogrid_cliente.get("nome") or geogrid_cliente.get("name") or ""
+        access_label = payload.codigo_integracion
+        if customer_name:
+            access_label = f"{payload.codigo_integracion} - {customer_name}"
+        access_point_id = await geogrid_service.create_access_point(
+            settings,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            label=access_label,
+            pasta_id=pasta_id,
+        )
+    attend_payload: Dict[str, Any] = {
+        "idPorta": payload.id_porta,
+        "idCliente": geogrid_id,
+        "codigoIntegracao": payload.codigo_integracion,
+    }
+    attend_payload["local"] = {"idItemRedeCliente": access_point_id}
+
+    attend_result = await geogrid_service.attend_customer(settings, attend_payload)
+    # Intentamos dejar un comentario en la porta con un nombre legible del drop.
+    try:
+        customer_name = geogrid_cliente.get("nome") or geogrid_cliente.get("name") or ""
+        drop_label = f"DROP - {payload.codigo_integracion}"
+        if customer_name:
+            drop_label += f" - {customer_name}"
+        await geogrid_service.comment_port(settings, payload.id_porta, drop_label)
+    except Exception as exc:  # best-effort, no bloquea el attend
+        logger.warning("No se pudo comentar la porta %s :: %s", payload.id_porta, exc)
+
+    return {
+        "status": "attended",
+        "geogrid_id": geogrid_id,
+        "attend_result": attend_result,
+    }
 
 
 @app.post(

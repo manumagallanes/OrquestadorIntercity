@@ -28,23 +28,23 @@
       }
     },
     "geogrid": {
-      "default_region": "default",
-      "regions": {
-        "default": {
-          "base_url": "https://GEOGRID_BASE_URL_PLACEHOLDER",
-          "timeout_seconds": 15.0,
-          "verify_tls": true,
-          "retry": {
-            "max_attempts": 4,
-            "backoff_initial_seconds": 0.4,
-            "backoff_max_seconds": 6.0
-          },
+        "default_region": "default",
+        "regions": {
+          "default": {
+            "base_url": "https://GEOGRID_BASE_URL_PLACEHOLDER",
+            "timeout_seconds": 30.0,
+            "verify_tls": true,
+            "retry": {
+              "max_attempts": 4,
+              "backoff_initial_seconds": 0.4,
+              "backoff_max_seconds": 8.0
+            },
           "circuit_breaker": {
             "failure_threshold": 3,
             "recovery_timeout_seconds": 60.0
           },
           "default_headers": {
-            "Authorization": "env:GEOGRID_BEARER"
+            "api-key": "env:GEOGRID_API_KEY"
           }
         }
       }

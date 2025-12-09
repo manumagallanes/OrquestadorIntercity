@@ -163,7 +163,7 @@ def sync_connection(
     payload = {"connection_id": connection_id}
     if customer_name:
         payload["customer_name"] = customer_name
-    response = client.post(url, json=payload, headers=headers, timeout=20.0)
+    response = client.post(url, json=payload, headers=headers, timeout=60.0)
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError:

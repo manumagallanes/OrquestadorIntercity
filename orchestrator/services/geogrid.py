@@ -56,6 +56,31 @@ async def get_cliente_by_codigo(
     return None
 
 
+async def get_cliente_by_codigo_integrado(
+    settings: "EnvConfig",
+    codigo_integracao: str,
+    fetch_json,
+) -> Optional[Dict[str, Any]]:
+    """
+    Usa la API /clientes/integrado/{codigoIntegracao} que retorna un único cliente.
+    """
+    client_kwargs, region = settings.http_client_kwargs("geogrid")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        response = await fetch_json(
+            client,
+            "GET",
+            f"/clientes/integrado/{codigo_integracao}",
+            service="geogrid",
+            settings=settings,
+            region_name=region,
+        )
+    if isinstance(response, dict):
+        dados = response.get("dados")
+        if isinstance(dados, dict):
+            return dados
+    return None
+
+
 async def upsert_cliente(
     settings: "EnvConfig",
     cliente_payload: Dict[str, Any],
@@ -82,13 +107,14 @@ async def upsert_cliente(
                 existing_id = dados[0].get("id")
 
         if existing_id is None:
+            logger.info("GeoGrid create payload: %s", cliente_payload)
             response = await client.post("/clientes", json={"dados": cliente_payload})
             logger.info(
                 "HTTP POST %s/clientes -> %s",
                 client_kwargs["base_url"],
                 response.status_code,
             )
-            if response.status_code != status.HTTP_201_CREATED:
+            if response.status_code not in {status.HTTP_201_CREATED, status.HTTP_200_OK}:
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=_safe_response_payload(response),
@@ -105,6 +131,9 @@ async def upsert_cliente(
         response = await client.put(
             f"/clientes/{existing_id}",
             json={"dados": cliente_payload},
+        )
+        logger.info(
+            "GeoGrid update payload: %s", cliente_payload
         )
         logger.info(
             "HTTP PUT %s/clientes/%s -> %s",
@@ -149,6 +178,104 @@ async def assign_port(
         return response.json().get("dados", {})
 
 
+async def attend_customer(
+    settings: "EnvConfig",
+    attend_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Llama a /integracao/atender con el payload ya armado.
+    Espera que attend_payload tenga al menos idPorta e idCliente, y opcionalmente local, codigoIntegracao, etc.
+    """
+    client_kwargs, _ = settings.http_client_kwargs("geogrid")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        response = await client.post("/integracao/atender", json=attend_payload)
+        logger.info(
+            "HTTP POST %s/integracao/atender -> %s",
+            client_kwargs["base_url"],
+            response.status_code,
+            )
+        if response.status_code != status.HTTP_200_OK:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=_safe_response_payload(response),
+            )
+        try:
+            body = response.json()
+            if isinstance(body, dict):
+                return body.get("dados", body)
+            return body
+        except ValueError:
+            return response.text
+
+
+async def comment_port(
+    settings: "EnvConfig",
+    id_porta: int,
+    comentario: str,
+) -> None:
+    """
+    Añade o actualiza el comentario de una porta en GeoGrid (/diagrama/comentario).
+    """
+    client_kwargs, _ = settings.http_client_kwargs("geogrid")
+    payload = {"idPorta": id_porta, "comentario": comentario}
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        response = await client.put("/diagrama/comentario", json=payload)
+        logger.info(
+            "HTTP PUT %s/diagrama/comentario -> %s",
+            client_kwargs["base_url"],
+            response.status_code,
+        )
+        if response.status_code != status.HTTP_200_OK:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=_safe_response_payload(response),
+            )
+
+
+async def create_access_point(
+    settings: "EnvConfig",
+    *,
+    latitude: float,
+    longitude: float,
+    label: str,
+    pasta_id: int,
+) -> int:
+    """
+    Crea un ponto de acesso (casita) en GeoGrid y retorna su id (itensRede).
+    """
+    client_kwargs, _ = settings.http_client_kwargs("geogrid")
+    payload = {
+        "dados": {
+            "item": "pontoAcesso",
+            "latitude": latitude,
+            "longitude": longitude,
+            "label": label,
+        },
+        "idPasta": pasta_id,
+    }
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        response = await client.post("/itensRede", json=payload)
+        logger.info(
+            "HTTP POST %s/itensRede -> %s",
+            client_kwargs["base_url"],
+            response.status_code,
+        )
+        if response.status_code not in {status.HTTP_200_OK, status.HTTP_201_CREATED}:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=_safe_response_payload(response),
+            )
+        body = response.json()
+        dados = body.get("dados") if isinstance(body, dict) else None
+        access_point_id = dados.get("id") if isinstance(dados, dict) else None
+        if access_point_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"message": "GeoGrid response without access point id", "payload": body},
+            )
+        return int(access_point_id)
+
+
 async def remove_assignment(
     settings: "EnvConfig",
     port_identifier: str,
@@ -187,4 +314,3 @@ def _safe_response_payload(response: httpx.Response) -> Any:
         return response.json()
     except ValueError:
         return response.text
-
