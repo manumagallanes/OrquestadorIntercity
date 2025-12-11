@@ -118,10 +118,19 @@ class ProvisionRequest(BaseModel):
 
 class GeoGridAttendRequest(BaseModel):
     codigo_integracion: str = Field(..., min_length=1)
-    id_porta: int = Field(..., ge=1)
+    id_porta: Optional[int] = Field(default=None, ge=1)
+    geogrid_caja_sigla: Optional[str] = Field(default=None, min_length=1)
+    geogrid_porta_num: Optional[int] = Field(default=None, ge=1)
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     id_item_rede_cliente: Optional[int] = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_port_reference(self):
+        if self.id_porta is None:
+            if not self.geogrid_caja_sigla or self.geogrid_porta_num is None:
+                raise ValueError("Debe indicar id_porta o (geogrid_caja_sigla y geogrid_porta_num)")
+        return self
 
 
 class DecommissionRequest(BaseModel):
@@ -2772,6 +2781,15 @@ async def geogrid_attend(
         )
 
     geogrid_id = geogrid_cliente.get("id")
+    # Resolver id_porta si vino por sigla+numero
+    resolved_port_id: Optional[int] = payload.id_porta
+    if resolved_port_id is None:
+        resolved_port_id = await geogrid_service.resolve_port_id_by_sigla_and_number(
+            settings,
+            sigla_caja=payload.geogrid_caja_sigla,  # type: ignore[arg-type]
+            porta_num=payload.geogrid_porta_num,  # type: ignore[arg-type]
+        )
+
     # Determinar el ponto de acesso: si no viene, crearlo con label "<codigo> - <cliente>"
     access_point_id = payload.id_item_rede_cliente
     if access_point_id is None:
@@ -2808,7 +2826,7 @@ async def geogrid_attend(
             pasta_id=pasta_id,
         )
     attend_payload: Dict[str, Any] = {
-        "idPorta": payload.id_porta,
+        "idPorta": resolved_port_id,
         "idCliente": geogrid_id,
         "codigoIntegracao": payload.codigo_integracion,
     }
@@ -2821,9 +2839,9 @@ async def geogrid_attend(
         drop_label = f"DROP - {payload.codigo_integracion}"
         if customer_name:
             drop_label += f" - {customer_name}"
-        await geogrid_service.comment_port(settings, payload.id_porta, drop_label)
+        await geogrid_service.comment_port(settings, resolved_port_id, drop_label)
     except Exception as exc:  # best-effort, no bloquea el attend
-        logger.warning("No se pudo comentar la porta %s :: %s", payload.id_porta, exc)
+        logger.warning("No se pudo comentar la porta %s :: %s", resolved_port_id, exc)
 
     return {
         "status": "attended",

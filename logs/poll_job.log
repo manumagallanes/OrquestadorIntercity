@@ -2954,3 +2954,844 @@ For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/St
 2025-12-09 13:30:02,128 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T12:51:45
 2025-12-09 13:30:03,188 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T12%3A51%3A45 "HTTP/1.1 200 OK"
 2025-12-09 13:30:03,189 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T12:51:45+00:00
+2025-12-09 13:45:01,747 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T12:51:45
+2025-12-09 13:45:02,465 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T12%3A51%3A45 "HTTP/1.1 200 OK"
+2025-12-09 13:45:02,519 INFO poll-isp :: Procesados=0 | omitidos=1
+2025-12-09 13:45:02,521 INFO poll-isp :: Cursor actualizado a 2025-12-09T16:38:55+00:00
+2025-12-09 14:00:02,080 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 14:00:03,053 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 14:00:03,054 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 14:15:01,554 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 14:15:02,245 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 14:15:02,246 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 14:30:01,868 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 14:30:02,538 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 14:30:02,539 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 14:45:02,288 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 14:45:03,183 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 14:45:03,184 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 15:00:02,095 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 15:00:03,315 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 15:00:03,316 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 15:15:01,925 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 15:15:02,693 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 15:15:02,695 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 15:30:02,562 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 15:30:03,337 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 15:30:03,341 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 15:45:02,181 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 15:45:03,456 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 15:45:03,458 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-09 16:00:01,862 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-09 16:00:02,761 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-09 16:00:02,762 INFO poll-isp :: Sin movimientos recientes desde 2025-12-09T16:38:55+00:00
+2025-12-10 10:15:01,618 INFO poll-isp :: Consultando ISP logs desde 2025-12-09T16:38:55
+2025-12-10 10:15:02,303 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-09T16%3A38%3A55 "HTTP/1.1 200 OK"
+2025-12-10 10:15:02,376 INFO poll-isp :: Procesando conexion=10817 nombre=ARABEL AYELEN
+2025-12-10 10:15:02,377 ERROR poll-isp :: Error sincronizando connection_id=10817 (entry=create_connection:10817)
+Traceback (most recent call last):
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 101, in handle_request
+    raise exc
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 78, in handle_request
+    stream = self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno 111] Connection refused
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 226, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 166, in sync_connection
+    response = client.post(url, json=payload, headers=headers, timeout=60.0)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1144, in post
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno 111] Connection refused
+2025-12-10 10:15:02,385 INFO poll-isp :: Procesando conexion=10818 nombre=ANDRADA LARA ABIGAIL
+2025-12-10 10:15:02,386 ERROR poll-isp :: Error sincronizando connection_id=10818 (entry=create_connection:10818)
+Traceback (most recent call last):
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 101, in handle_request
+    raise exc
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 78, in handle_request
+    stream = self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno 111] Connection refused
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 226, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 166, in sync_connection
+    response = client.post(url, json=payload, headers=headers, timeout=60.0)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1144, in post
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno 111] Connection refused
+2025-12-10 10:15:02,388 INFO poll-isp :: Procesando conexion=10819 nombre=ANDRADA LARA ABIGAIL
+2025-12-10 10:15:02,389 ERROR poll-isp :: Error sincronizando connection_id=10819 (entry=create_connection:10819)
+Traceback (most recent call last):
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 101, in handle_request
+    raise exc
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 78, in handle_request
+    stream = self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno 111] Connection refused
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 226, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 166, in sync_connection
+    response = client.post(url, json=payload, headers=headers, timeout=60.0)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1144, in post
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno 111] Connection refused
+2025-12-10 10:15:02,391 INFO poll-isp :: Procesados=0 | omitidos=3
+2025-12-10 10:15:02,391 INFO poll-isp :: Cursor actualizado a 2025-12-10T12:00:56+00:00
+2025-12-10 10:30:02,075 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 10:30:02,618 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 200 OK"
+2025-12-10 10:30:02,627 INFO poll-isp :: Sin movimientos recientes desde 2025-12-10T12:00:56+00:00
+2025-12-10 10:45:02,765 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 10:45:03,253 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 200 OK"
+2025-12-10 10:45:03,255 INFO poll-isp :: Sin movimientos recientes desde 2025-12-10T12:00:56+00:00
+2025-12-10 11:00:02,101 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 11:00:02,882 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 200 OK"
+2025-12-10 11:00:02,883 INFO poll-isp :: Sin movimientos recientes desde 2025-12-10T12:00:56+00:00
+2025-12-10 11:15:02,390 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 11:15:04,050 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 200 OK"
+2025-12-10 11:15:04,052 INFO poll-isp :: Sin movimientos recientes desde 2025-12-10T12:00:56+00:00
+2025-12-10 11:30:01,713 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 11:30:02,570 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 200 OK"
+2025-12-10 11:30:02,571 INFO poll-isp :: Sin movimientos recientes desde 2025-12-10T12:00:56+00:00
+2025-12-10 11:45:02,173 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 11:45:03,185 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 200 OK"
+2025-12-10 11:45:03,186 INFO poll-isp :: Sin movimientos recientes desde 2025-12-10T12:00:56+00:00
+2025-12-10 12:00:01,999 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 12:00:02,686 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 12:00:02,689 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 12:15:01,432 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 12:15:02,501 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 12:15:02,504 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 12:30:02,186 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 12:30:03,226 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 12:30:03,229 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 12:45:01,924 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 12:45:02,770 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 12:45:02,772 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 13:00:02,454 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 13:00:02,870 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 13:00:02,895 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 13:15:01,535 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 13:15:02,226 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 13:15:02,227 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 13:30:02,679 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 13:30:03,641 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 13:30:03,643 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 13:45:02,374 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 13:45:03,415 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 13:45:03,418 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 14:00:02,104 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 14:00:02,534 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 14:00:02,536 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 14:15:02,116 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 14:15:02,704 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 14:15:02,706 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 14:30:02,622 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 14:30:03,565 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 14:30:03,568 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 14:45:02,338 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 14:45:03,165 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 14:45:03,167 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 15:00:01,798 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 15:00:02,368 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 15:00:02,370 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 15:15:02,059 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 15:15:05,001 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 15:15:05,004 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 15:30:01,652 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 15:30:02,579 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 15:30:02,581 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 15:45:02,250 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 15:45:02,810 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 15:45:02,812 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-10 16:45:01,738 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-10 16:45:03,064 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-10 16:45:03,066 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-11 10:15:02,085 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-11 10:15:03,175 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 401 Unauthorized"
+2025-12-11 10:15:03,177 ERROR poll-isp :: Job finalizado con error: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 372, in <module>
+    main()
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 309, in main
+    logs, provisioning_disabled = fetch_provisioning_logs(
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 128, in fetch_provisioning_logs
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2025-12-11 10:30:02,540 INFO poll-isp :: Consultando ISP logs desde 2025-12-10T12:00:56
+2025-12-11 10:30:03,517 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-10T12%3A00%3A56 "HTTP/1.1 200 OK"
+2025-12-11 10:30:03,942 INFO poll-isp :: Procesando conexion=10820 nombre=GRASSELER HERNAN
+2025-12-11 10:30:04,763 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 502 Bad Gateway"
+2025-12-11 10:30:04,764 ERROR poll-isp :: Sync fallo para connection_id=10820 -> 502 {"detail":{"service":"isp","region":"default","upstream_detail":"<!DOCTYPE html>\n<html>\n    <head>\n        <meta charset=\"UTF-8\" />\n        <meta http-equiv=\"refresh\" content=\"0;url='https://online20.ispcube.com/login'\" />\n\n        <title>Redirecting to https://online20.ispcube.com/login</title>\n    </head>\n    <body>\n        Redirecting to <a href=\"https://online20.ispcube.com/login\">https://online20.ispcube.com/login</a>.\n    </body>\n</html>","status_code":302}}
+2025-12-11 10:30:04,764 ERROR poll-isp :: Error sincronizando connection_id=10820 (entry=create_connection:10820)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 226, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 168, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502
+2025-12-11 10:30:04,765 INFO poll-isp :: Procesando conexion=10821 nombre=CABRERA AXEL IVAN
+2025-12-11 10:30:05,395 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 502 Bad Gateway"
+2025-12-11 10:30:05,396 ERROR poll-isp :: Sync fallo para connection_id=10821 -> 502 {"detail":{"service":"isp","region":"default","upstream_detail":"<!DOCTYPE html>\n<html>\n    <head>\n        <meta charset=\"UTF-8\" />\n        <meta http-equiv=\"refresh\" content=\"0;url='https://online20.ispcube.com/login'\" />\n\n        <title>Redirecting to https://online20.ispcube.com/login</title>\n    </head>\n    <body>\n        Redirecting to <a href=\"https://online20.ispcube.com/login\">https://online20.ispcube.com/login</a>.\n    </body>\n</html>","status_code":302}}
+2025-12-11 10:30:05,396 ERROR poll-isp :: Error sincronizando connection_id=10821 (entry=create_connection:10821)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 226, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 168, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502
+2025-12-11 10:30:05,396 INFO poll-isp :: Procesando conexion=10822 nombre=MORAN ZAIRA YASMIN
+2025-12-11 10:30:05,849 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 502 Bad Gateway"
+2025-12-11 10:30:05,850 ERROR poll-isp :: Sync fallo para connection_id=10822 -> 502 {"detail":{"service":"isp","region":"default","upstream_detail":"<!DOCTYPE html>\n<html>\n    <head>\n        <meta charset=\"UTF-8\" />\n        <meta http-equiv=\"refresh\" content=\"0;url='https://online20.ispcube.com/login'\" />\n\n        <title>Redirecting to https://online20.ispcube.com/login</title>\n    </head>\n    <body>\n        Redirecting to <a href=\"https://online20.ispcube.com/login\">https://online20.ispcube.com/login</a>.\n    </body>\n</html>","status_code":302}}
+2025-12-11 10:30:05,850 ERROR poll-isp :: Error sincronizando connection_id=10822 (entry=create_connection:10822)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 226, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 168, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502
+2025-12-11 10:30:05,853 INFO poll-isp :: Procesando conexion=10823 nombre=ARCE VIVIANA DELFINA
+2025-12-11 10:30:06,366 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 502 Bad Gateway"
+2025-12-11 10:30:06,369 ERROR poll-isp :: Sync fallo para connection_id=10823 -> 502 {"detail":{"service":"isp","region":"default","upstream_detail":"<!DOCTYPE html>\n<html>\n    <head>\n        <meta charset=\"UTF-8\" />\n        <meta http-equiv=\"refresh\" content=\"0;url='https://online20.ispcube.com/login'\" />\n\n        <title>Redirecting to https://online20.ispcube.com/login</title>\n    </head>\n    <body>\n        Redirecting to <a href=\"https://online20.ispcube.com/login\">https://online20.ispcube.com/login</a>.\n    </body>\n</html>","status_code":302}}
+2025-12-11 10:30:06,369 ERROR poll-isp :: Error sincronizando connection_id=10823 (entry=create_connection:10823)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 226, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/poll_isp_connections.py", line 168, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502
+2025-12-11 10:30:06,370 INFO poll-isp :: Procesados=0 | omitidos=77
+2025-12-11 10:30:06,371 INFO poll-isp :: Cursor actualizado a 2025-12-11T13:28:32+00:00
+2025-12-11 10:45:02,256 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 10:45:03,365 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 10:45:03,366 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 11:00:02,188 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 11:00:03,087 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 11:00:03,088 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 11:15:01,724 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 11:15:02,676 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 11:15:02,697 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 11:30:02,428 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 11:30:03,442 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 11:30:03,443 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 11:45:02,156 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 11:45:03,169 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 11:45:03,172 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 12:00:02,077 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 12:00:03,095 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 12:00:03,097 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 12:15:01,653 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 12:15:02,659 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 12:15:02,662 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 12:30:02,268 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 12:30:03,441 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 12:30:03,442 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 12:45:02,136 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 12:45:02,963 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 12:45:02,966 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 13:00:01,690 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 13:00:02,767 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 13:00:02,769 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 13:15:02,340 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 13:15:02,978 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 13:15:02,979 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 13:30:01,797 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 13:30:03,082 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 13:30:03,083 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 13:45:01,879 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 13:45:02,967 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 13:45:02,969 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
+2025-12-11 14:00:02,120 INFO poll-isp :: Consultando ISP logs desde 2025-12-11T13:28:32
+2025-12-11 14:00:03,338 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2025-12-11T13%3A28%3A32 "HTTP/1.1 200 OK"
+2025-12-11 14:00:03,340 INFO poll-isp :: Sin movimientos recientes desde 2025-12-11T13:28:32+00:00
