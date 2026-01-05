@@ -1,485 +1,251 @@
 # Orquestador Intercity – Documentación Técnica
 
-Este repositorio reúne un entorno autocontenido para reproducir la integración entre ISP-Cube y GeoGrid mediante un orquestador escrito en FastAPI. El propósito central es disponer de un laboratorio controlado que permita comprender la arquitectura, validar comportamientos y preparar despliegues hacia entornos reales sin depender de sistemas productivos.
+Este repositorio contiene el orquestador que integra **ISP‑Cube** (catálogo de clientes y altas) con **GeoGrid** (plataforma geoespacial). El objetivo es **automatizar** la creación/actualización de clientes y el **tendido lógico** (drop) a partir de las altas, con validaciones, auditoría y monitoreo.
+
+El documento está orientado a un **trabajo final de prácticas profesionales**, con foco en claridad, reproducibilidad y criterios técnicos verificables.
 
 ---
 
-## 1. Introducción
+## 1. Alcance y objetivos
 
-El orquestador coordina dos dominios complementarios: el catálogo de clientes (ISP-Cube) y la plataforma geoespacial (GeoGrid), donde se registran ubicaciones y se administran asignaciones de puertos. Cada operación se valida de forma previa, se registra en auditoría, expone métricas y produce incidentes cuando un flujo no puede concluirse. El ecosistema completo se empaqueta con Docker Compose e incluye mocks funcionales, panel de monitoreo y una interfaz Streamlit para operar sin requerir herramientas adicionales.
+**Alcance principal**
+- Detectar movimientos en ISP‑Cube (altas, cambios de FTTH) y sincronizarlos con GeoGrid.
+- Validar datos críticos (coordenadas, caja, puerto, etc.).
+- Registrar auditorías e incidentes y exponer métricas para observabilidad.
 
-Este documento presenta la fundamentación conceptual, la arquitectura técnica, los flujos principales, las opciones de configuración y las pautas operativas para que una persona ajena al proyecto pueda utilizarlo con criterio.
+**Objetivo operativo**
+- Que una alta en ISP‑Cube se traduzca automáticamente en:
+  1) Cliente en GeoGrid.
+  2) Casita (ponto de acesso) con coordenadas.
+  3) Asignación del drop al puerto correcto.
 
----
-
-## 2. Marco teórico
-
-### 2.1 Orquestación OSS/BSS en redes FTTx
-
-La orquestación en un escenario FTTx consiste en coordinar procesos entre sistemas de soporte (OSS/BSS) con el fin de preservar consistencia operativa. Un orquestador intermedia entre solicitudes de automatización y sistemas especializados, aplicando reglas de negocio, normalización de datos y control transaccional. El modelo simplifica la integración al centralizar la lógica y desacoplar consumidores de las APIs subyacentes.
-
-### 2.2 Consistencia y calidad de datos
-
-Antes de modificar sistemas externos, el orquestador valida que el cliente tenga datos completos, coordenadas dentro del rango admitido y que la estructura de red solicitada coincida con la registrada. Esta verificación temprana evita divergencias entre plataformas y reduce el costo de remediación. Los incidentes emitidos (`missing_fields`, `invalid_coordinates`, `hardware_mismatch`, entre otros) documentan las causas de rechazo para permitir acciones correctivas.
-
-### 2.3 Resiliencia frente a fallos
-
-Las integraciones utilizan clientes HTTP asíncronos, reintentos con backoff exponencial y circuit breakers configurables. Los códigos 5xx gatillan reintentos, mientras que fallas consecutivas elevadas abren el breaker correspondiente y bloquean la interacción temporalmente. Este patrón protege al orquestador de degradaciones en los servicios externos y facilita la observación de incidentes repetitivos.
+**No objetivo**
+- Inventariar la red en GeoGrid ni corregir datos históricos de ISP‑Cube. El orquestador **consume** esos datos, no los genera.
 
 ---
 
-## 3. Arquitectura de la solución
+## 2. Arquitectura
 
-### 3.1 Componentes principales
+**Servicios (Docker Compose)**
+| Servicio         | Puerto | Rol |
+|------------------|:------:|-----|
+| `orchestrator`   | 8000   | API FastAPI, reglas de negocio, métricas y auditoría |
+| `isp-mock`       | 8001   | Mock de ISP‑Cube (entorno de laboratorio) |
+| `geogrid-mock`   | 8002   | Mock de GeoGrid (entorno de laboratorio) |
+| `prometheus`     | 9090   | Métricas del orquestador |
+| `grafana`        | 3000   | Paneles de monitoreo |
+| `ui`             | 8501   | Interfaz Streamlit para pruebas |
 
-| Servicio         | Puerto | Descripción resumida                                                                 |
-|------------------|:------:|---------------------------------------------------------------------------------------|
-| `orchestrator`   |  8000  | API FastAPI que implementa la lógica de negocio, expone endpoints REST y métricas.   |
-| `isp-mock`       |  8001  | Mock de ISP-Cube con catálogo de clientes en memoria y soporte para flags de integración. |
-| `geogrid-mock`   |  8002  | Mock de GeoGrid que gestiona clientes, coordenadas y asignaciones de puertos PON.  |
-| `prometheus`     |  9090  | Servicio de métricas que consume el endpoint `/metrics` del orquestador.             |
-| `grafana`        |  3000  | Dashboards preconfigurados para visualizar flujos, incidentes y latencias.          |
-| `ui`             |  8501  | Interfaz Streamlit para operar sobre la API y los mocks sin necesidad de `curl`.    |
-
-El archivo `diagrama.mmd` describe la topología mediante un diagrama Mermaid. Los contenedores comparten una red interna, por lo que no se requieren dependencias externas ni credenciales reales.
-
-### 3.2 Módulos relevantes
-
-- `orchestrator/main.py`: define modelos Pydantic, carga de configuración, middlewares, endpoints y reglas de validación.
-- `config/environments/*.json`: describe entornos, regiones, timeouts, reintentos y circuit breakers.
-- `monitoring/`: incluye dashboards y reglas de Prometheus/Grafana.
-- `mocks/`: implementa la lógica de las APIs simuladas.
-- `scripts/`: alberga utilitarios reutilizables (por ejemplo, potenciales smoke tests automatizados).
+**Diagrama**
+- Archivo: `diagrama.mmd` (Mermaid)
+- Flujo conceptual: ISP‑Cube → Orquestador → GeoGrid
 
 ---
 
-## 4. Configuración de entornos y parámetros
+## 3. Flujo funcional (alto nivel)
 
-### 4.1 Archivos JSON de entorno
+1) **ISP‑Cube** registra una alta o un cambio en FTTH.
+2) El **poller** consulta `connections_provisioning_logs`.
+3) El **orquestador** valida datos y sincroniza con GeoGrid.
+4) Se crea/actualiza cliente, casita y drop.
+5) Se registran **auditorías**, **incidentes** y **métricas**.
 
-Los archivos `dev.json`, `staging.json`, `production.json` e `intercity.json` especifican, para cada servicio:
-
-- `base_url` y `timeout_seconds`.
-- Parámetros de reintento (`max_attempts`, `backoff_initial_seconds`, `backoff_max_seconds`).
-- Configuración de circuit breaker (`failure_threshold`, `recovery_timeout_seconds`).
-- Headers por defecto, opcionalmente con referencias a variables de entorno (`env:VARIABLE`).
-
-El campo `default_region` determina la región activa cuando no se indica otra explícitamente.
-
-### 4.2 Variables de entorno disponibles
-
-- `ORCHESTRATOR_ENV`: selecciona el archivo de configuración a cargar (`dev` por defecto).
-- `ISP_REGION`, `GEOGRID_REGION`: sustituyen la región por defecto de cada servicio.
-- `ISP_BASE_URL`, `GEOGRID_BASE_URL`: sobrescriben el `base_url` de la región principal sin modificar los JSON. Para entornos reales además debés definir `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_BEARER`, `GEOGRID_BEARER`.
-- `DRY_RUN`: fuerza el valor inicial del flag global `dry_run` (interpreta `true/false`, `1/0` o equivalentes).
-- `ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK`: cuando vale `true`, los clientes sin lat/lng reales no bloquean el flujo; se genera un incidente `missing_fields` pero se utilizan coordenadas de zona (o el fallback por defecto) para seguir alimentando GeoGrid y los paneles de Grafana.
-- `ORCHESTRATOR_ALLOW_MISSING_NETWORK_KEYS`: cuando vale `true`, las faltas de OLT/board/pon/ONU/caja/puerto no bloquean; se registra `missing_network_keys` y el flujo continúa. En `false` (modo estricto) se responde 422.
-- `ORCHESTRATOR_MIN_START_DATE`: fecha de corte opcional (`YYYY-MM-DD`). Los movimientos anteriores devuelven 412 `automation_not_allowed` y no se procesan.
-- Cualquier valor declarado como `env:VARIABLE` en los JSON debe definirse en el entorno del proceso antes de iniciar el orquestador.
-
-El endpoint `GET /config` expone la configuración efectiva con las sustituciones aplicadas, mientras que `POST /config` actualiza el flag `dry_run` en tiempo de ejecución.
-
-### 4.3 Dataset inicial de clientes
-
-El mock de ISP-Cube incluye un conjunto base de clientes representativos (inicialmente 2142, 2143 y 2144) embebidos en `mocks/isp_cube/main.py`. Cada reinicio (`POST /reset`) restablece esos datos, facilitando pruebas reproducibles sin dependencias externas.
+**Nota crítica:**
+El cron **solo procesa movimientos que ISP‑Cube emite en `connections_provisioning_logs`**. Si no hay movimiento, no hay sincronización automática.
 
 ---
 
-## 5. Puesta en marcha local
+## 4. Requisitos de datos (ISP‑Cube)
 
-### 5.1 Requisitos previos
+Para que el flujo sea automático y sin errores, la conexión debe tener:
+- **Lat/Lon** válidos (dentro del rango permitido).
+- **Caja FTTH** (sigla/nombre coincide con GeoGrid).
+- **Puerto FTTH** (número de puerto).
 
-1. Docker y Docker Compose (plugin `docker compose`).
-2. Puertos libres: 8000–8003, 8501, 3000 y 9090.
-3. Python 3.10+ es opcional para ejecutar scripts fuera de los contenedores.
+Campos usuales en ISP‑Cube:
+- `connection_ftth_box` (ej. `CAJA_MANUEL1`)
+- `connection_ftth_port` (número de puerto)
+- `connection_lat`, `connection_lng`
 
-### 5.2 Inicio del entorno
+Si faltan, el orquestador genera incidentes y **no puede crear el drop correctamente**.
+
+---
+
+## 5. GeoGrid: integración recomendada
+
+La integración sigue el flujo sugerido por GeoGrid:
+1) **Crear cliente** (`/clientes`) con `codigoIntegracao`.
+2) **Obtener idCliente** (`/clientes/integrado/{codigoIntegracao}`).
+3) **Atender** (`/integracao/atender`) con:
+   - `idPorta` (puerto en la caja/CTO)
+   - `idCliente`
+   - `local` con coordenadas y `idItemRedeCliente`
+   - `idCaboTipo` opcional (Drop) y `pontos`.
+
+**`codigoIntegracao`**
+- Se usa el **connection_id** de ISP‑Cube. Eso evita conflictos y permite trazabilidad.
+
+**Comentario del drop**
+- Se escribe un comentario en la porta con formato:
+  - `Drop - NOMBRE CLIENTE`
+  - Si se repite, se agrega sufijo: `Drop - NOMBRE CLIENTE 2`, etc.
+
+---
+
+## 6. Configuración
+
+### 6.1 Archivos de entorno
+`config/environments/*.json` definen:
+- URL base por servicio
+- Timeouts
+- Reintentos
+- Circuit breakers
+
+### 6.2 Variables principales
+- `ORCHESTRATOR_ENV` (ej. `dev`)
+- `ISP_BASE_URL`, `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_USERNAME`, `ISP_BEARER`
+- `GEOGRID_BASE_URL`, `GEOGRID_BEARER`
+- `GEOGRID_PASTA_ID`
+- `GEOGRID_CABO_TIPO_NAME` (ej. `Drop Acometidas`) o `GEOGRID_CABO_TIPO_ID`
+- `ORCHESTRATOR_GEOGRID_AUTO_ATTEND=true`
+- `ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK=true/false`
+- `ORCHESTRATOR_ALLOW_MISSING_NETWORK_KEYS=true/false`
+- `ORCHESTRATOR_MIN_START_DATE=YYYY-MM-DD`
+
+---
+
+## 7. Puesta en marcha
 
 ```bash
 docker compose up --build
 ```
 
-El comando compila imágenes, crea la red interna y lanza todos los servicios según la configuración `dev`. Los accesos principales son:
-
-- API y documentación interactiva: http://localhost:8000/docs
-- UI Streamlit: http://localhost:8501
-- Grafana: http://localhost:3000 (usuario `admin`, contraseña `admin`)
+Accesos:
+- API: http://localhost:8000/docs
+- Grafana: http://localhost:3000 (admin/admin)
 - Prometheus: http://localhost:9090
+- UI: http://localhost:8501
 
-### 5.4 Modos de validación (estricto vs. relajado)
+---
 
-- Estricto (recomendado en producción): no definas los flags o ponelos en `false`. Faltas de lat/lon o de claves de red devuelven 422 y se registran incidentes.
-- Relajado (para evidencias o datos incompletos): `ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK=true` y `ORCHESTRATOR_ALLOW_MISSING_NETWORK_KEYS=true`. El flujo sigue aunque falten coordenadas o identificadores de red; se registran incidentes y se usan coordenadas de zona como fallback.
-- Cutoff opcional: `ORCHESTRATOR_MIN_START_DATE=YYYY-MM-DD` para ignorar movimientos anteriores a la fecha de corte (412 `automation_not_allowed`).
+## 8. Poller ISP → Orquestador
 
-### 5.5 Job de polling ISP → Orquestador
+Script: `scripts/poll_isp_connections.py`
 
-- Script: `scripts/poll_isp_connections.py`
-- Uso típico:
-  - Primera corrida o recuperación tras corte: `rm -f .state/connections_provisioning.cursor && ./scripts/poll_isp_connections.py --lookback-hours 24`
-  - Corrida acotada: `./scripts/poll_isp_connections.py --since "2025-11-22T00:00:00Z"`
-- Auto-ajuste: si el cursor está vacío o viejo, el job amplía el `lookback` para no perder movimientos (`--stale-threshold-hours`, `--max-lookback-on-stale`).
-- Cabeceras ISP: requiere `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_USERNAME`, `ISP_BEARER` en el entorno. Si las credenciales expiran, devolverá 401.
-- Salida: escribe en `logs/poll_job.log`, mantiene `./.state/connections_provisioning.cursor` y un estado JSON en `./.state/connections_provisioning.status.json`.
-
-### 5.6 Alertas, errores y deduplicación
-
-- Incidentes duplicados consecutivos se omiten para reducir ruido. Cualquier HTML/3xx o JSON inválido de ISP/GeoGrid se devuelve como 502 controlado (sin 500).
-- El poller ignora conexiones repetidas dentro del mismo batch para evitar re-llamadas innecesarias.
-- 404 en `/sync/customer` indican que ISP no devolvió la conexión solicitada; revisa la API con `connection_id` o `connection_code` y, si no existe, excluye esos IDs del feed o resolvelos manualmente.
-
-### 5.3 Reinicialización del estado
-
+Ejemplos:
 ```bash
-curl -X POST http://localhost:8000/reset
+# Primera corrida o recuperación
+rm -f .state/connections_provisioning.cursor
+./scripts/poll_isp_connections.py --lookback-hours 24
+
+# Ventana acotada
+./scripts/poll_isp_connections.py --since "2026-01-05T16:45:00Z"
 ```
 
-El orquestador coordina el reinicio de cada mock y limpia los buffers de auditoría e incidentes en memoria. El endpoint devuelve `202 Accepted` para indicar que la operación se ejecuta de forma asíncrona.
+**Cron actual (15 min):**
+```
+*/15 * * * * cd /home/manu/Desktop/orquestador_intercity-develop && ./scripts/poll_isp_connections.py --lookback-hours 6 >> logs/poll_job.log 2>&1
+```
 
----
+**Reconcilación (sin cursor):**
+Script: `scripts/replay_provisioning.py`  
+Reprocesa los movimientos del día (o una ventana) sin tocar el cursor principal.
 
-## 6. Flujos operativos del orquestador
-
-Los endpoints principales se encuentran en `orchestrator/main.py` y comparten la siguiente estructura: validación preliminar, interacción con servicios externos, registro en auditoría e instrumentación de métricas.
-
-### 6.1 Sincronización de cliente hacia GeoGrid (`POST /sync/customer`)
-
-1. Consulta a ISP-Cube para obtener el cliente maestro (el orquestador acepta `customer_id` o `connection_code`).
-2. Validaciones ejecutadas por `ensure_customer_ready`: flag de integración activo, campos obligatorios completos, coordenadas numéricas y dentro del bounding box definido (valores de Córdoba por defecto).
-3. Construcción del payload compatible con `clientes` de GeoGrid (incluyendo coordenadas y metadatos de red).
-   - El campo `nome` se arma como `"<ID conexión> - <Nombre>"` para facilitar la identificación visual en el mapa.
-4. Manejo de resultados:
-   - `201 Created`: el registro se marca como creado (`action: created`).
-   - `409 Conflict`: se recupera el identificador existente, se realiza un `PUT` y se marca como actualizado (`action: updated`).
-5. Auditoría de la operación y actualización de contadores de métricas.
-
-Los incidentes `integration_disabled`, `missing_fields` e `invalid_coordinates` describen las causas por las que un cliente no puede sincronizarse.
-
-### 6.2 Provisionamiento de ONU (`POST /provision/onu`)
-
-1. Recuperación del cliente en ISP-Cube (por `customer_id` o `connection_code`) y validaciones `ensure_customer_ready` + `ensure_alignment`.
-2. Upsert del registro en GeoGrid para garantizar que los datos de ubicación y red estén actualizados.
-3. Evaluación del flag `dry_run` (global o provisto en la petición):
-   - En modo simulación se devuelve un resultado informativo sin invocar GeoGrid.
-   - En modo ejecución se llama a `/integracao/atender`, registrando la asignación de puerto.
-4. Registro en auditoría con el resultado (`assigned`, `dry_run`, `error`) y actualización de métricas.
-
-Los conflictos de puerto devuelven `409 Conflict` y generan el incidente `geogrid_assignment_conflict`. Si un cliente activo con datos de red carece de asignación, se registra `missing_geogrid_assignment`.
-
-### 6.3 Baja técnica (`POST /decommission/customer`)
-
-1. Verificación de estado inactivo mediante `ensure_customer_inactive` (identificando al cliente por `customer_id` o `connection_code`).
-2. Búsqueda del cliente en GeoGrid; si no existe, se registra `decommission_missing_feature`.
-3. Eliminación de la asignación de puerto en GeoGrid; la ausencia de registros también genera `decommission_missing_feature`.
-4. Consolidación del resultado final y auditoría del proceso.
-
----
-
-## 7. API expuesta
-
-| Endpoint                 | Método | Descripción                                                | Códigos destacados |
-|--------------------------|:------:|------------------------------------------------------------|--------------------|
-| `/sync/customer`         | POST   | Replica un cliente en GeoGrid con validaciones previas.    | 200, 409, 412, 422 |
-| `/provision/onu`         | POST   | Asigna al cliente un puerto en GeoGrid (respeta `dry_run`).| 200, 409, 400, 412, 422 |
-| `/decommission/customer` | POST   | Remueve la asignación de puerto para un cliente inactivo.  | 200, 404, 400, 412 |
-| `/config`                | GET    | Informa la configuración efectiva del orquestador.         | 200 |
-| `/config`                | POST   | Actualiza el flag global `dry_run`.                        | 200 |
-| `/reset`                 | POST   | Restablece mocks, auditorías e incidentes.                 | 202 |
-| `/incidents`             | GET    | Lista incidentes recientes (con filtros por tipo y rango). | 200 |
-| `/audits`                | GET    | Devuelve auditorías filtradas por acción, usuario o estado.| 200 |
-| `/metrics`               | GET    | Exposición Prometheus de contadores e histogramas.         | 200 |
-| `/analytics/customer-events` | POST / GET | Alta manual de eventos o consulta de feed georreferenciado. | 200, 201 |
-| `/health`                | GET    | Comprobación básica de disponibilidad.                     | 200 |
-
-### 7.1 Ejemplos de invocación
-
-> **Importante:** El mock de ISP-Cube incluye clientes demo (IDs `2142`, `2143`, `2144`). Podés inspeccionarlos con `GET /customers/customers_list` y ajustar sus banderas mediante `PUT /customers/{id}`. Ejemplo:
-
+Ejemplos:
 ```bash
-curl \"http://localhost:8001/api/customers/customers_list?limit=5\" | jq
+./scripts/replay_provisioning.py
+./scripts/replay_provisioning.py --lookback-hours 24
 ```
 
-Luego pueden ejecutarse las operaciones habituales:
-
-```bash
-curl -X POST http://localhost:8000/sync/customer \
-  -H 'Content-Type: application/json' \
-  -d '{"customer_id": 202}'
+**Cron recomendado (cada 2 h):**
 ```
-
-```bash
-curl -X POST http://localhost:8000/provision/onu \
-  -H 'Content-Type: application/json' \
-  -d '{"customer_id":202,"olt_id":2,"board":3,"pon_port":4,"onu_sn":"TESTSN00002","dry_run":false}'
-```
-
-```bash
-curl -X POST http://localhost:8000/decommission/customer \
-  -H 'Content-Type: application/json' \
-  -d '{"customer_id":707,"dry_run":false}'
-```
-
-```bash
-curl -X POST http://localhost:8000/analytics/customer-events \
-  -H 'Content-Type: application/json' \
-  -d '{"event_type":"alta","customer_id":202,"metadata":{"nota":"carga manual"}}'
+7 */2 * * * cd /home/manu/Desktop/orquestador_intercity-develop && ./scripts/replay_provisioning.py --lookback-hours 24 >> logs/replay_provisioning.log 2>&1
 ```
 
 ---
 
-## 8. Observabilidad
+## 9. Reintentos automáticos de incidentes
 
-### 8.1 Despliegue de Prometheus y Grafana
+Para cubrir cambios que **no generan logs**, se agregó un reintento periódico:
 
-El directorio `monitoring/` contiene todo lo necesario para levantar un stack de observabilidad acoplado al laboratorio:
-
-- `monitoring/prometheus.yml` define un `scrape_config` que apunta al `orchestrator:8000/metrics` cada 15 segundos.
-- `monitoring/grafana/provisioning/datasources/prometheus.yml` crea dos datasources: Prometheus (uid `prometheus`) y un datasource JSON (uid `orchestrator-analytics`) que consulta directamente los endpoints de analítica.
-- `monitoring/grafana/provisioning/dashboards/dashboards.yml` carga automáticamente los dashboards ubicados en `monitoring/grafana/dashboards/`.
-
-Ejecución recomendada:
-
-```bash
-docker compose up -d prometheus grafana orchestrator
+```
+5 */2 * * * cd /home/manu/Desktop/orquestador_intercity-develop && ./scripts/retry_incidents.py --lookback-hours 24 >> logs/retry_incidents.log 2>&1
 ```
 
-Grafana queda disponible en `http://localhost:3000` (usuario `admin`, contraseña `admin`). Prometheus está accesible en `http://localhost:9090`.
-
-### 8.2 Métricas expuestas
-
-El middleware HTTP y los flujos de negocio reportan los siguientes indicadores en formato Prometheus:
-
-- `orchestrator_request_latency_seconds_bucket{endpoint,method}`
-- `orchestrator_requests_total{endpoint,method,status}`
-- `orchestrator_customer_sync_total{result}`
-- `orchestrator_provision_total{result}`
-- `orchestrator_decommission_total{result}`
-- `orchestrator_incidents_total{kind}`
-- `orchestrator_incidents_buffer_size`
-- `orchestrator_incidents_resolved_total{kind}`
-- `orchestrator_customer_events_total{event_type,zone}`
-
-Complementariamente, los endpoints JSON bajo `/analytics/customer-events*` (incluyendo `/analytics/customer-events/map/altas` y `/analytics/customer-events/map/bajas`, que devuelven colecciones GeoJSON) entregan información georreferenciada y agregados listos para consumir desde Grafana (volúmenes por zona, series temporales y feed de eventos). Además, el orquestador implementa `/query` compatible con el datasource JSON de Grafana para generar tablas dinámicas con coordenadas ya validadas (`target: customer_events_map`) y para exponer incidentes corregidos mediante `target: incidents_resolved`.
-
-Otros endpoints útiles para dashboards:
-
-- `GET /incidents/resolved`: historial de incidentes corregidos, filtrable por `customer_id`, `kind` y ventana de tiempo.
-
-Para generar datos de prueba sin tráfico real, exporta `ORCHESTRATOR_SEED_CUSTOMER_EVENTS=true` antes de iniciar el contenedor del orquestador o registra eventos manuales con `POST /analytics/customer-events`.
-
-### 8.3 Dashboard «Monitoreo Orquestador Intercity»
-
-El dashboard principal (`monitoring/grafana/dashboards/orchestrator-overview.json`) incluye:
-
-- Controles de filtros para **zona** (regex sobre `zone`) y **ventana de días** reutilizados por todos los paneles.
-- Indicadores acumulados de altas, bajas y crecimiento neto basados en `orchestrator_customer_events_total`, con descripción contextual.
-- Series temporales de altas/bajas y de incidentes por tipo usando `increase(...[$__range])` para visualizar tendencias dentro del rango seleccionado.
-- Conteo de incidentes activos (`orchestrator_incidents_buffer_size`) y tarjetas de incidentes nuevos / resueltos calculados sobre el rango actual.
-- Tabla de incidentes abiertos (`target incidents_open`) que lista cliente, tipo y contexto de cada caso pendiente, y tabla de incidentes resueltos (`target incidents_resolved`) con detalle descargable.
-- Mapa georreferenciado que consume el `target customer_events_map` vía `/query`, dibujando marcadores verdes para altas y rojos para bajas con información contextual (zona, cliente, ciudad) y fallback automático de coordenadas. Cada marcador muestra `cliente: <id> – <nombre>` para facilitar la identificación.
-
-Todos los paneles admiten filtros temporales desde Grafana y pueden extenderse para cubrir nuevos indicadores o fuentes de datos corporativas.
+Esto re‑ejecuta `/sync/customer` para incidentes recientes (últimas 24h).
 
 ---
 
-## 9. Interfaz de usuario (Streamlit)
+## 10. Monitoreo y alertas
 
-El servicio `ui` permite ejecutar los flujos sin uso de CLI:
+Prometheus consume `/metrics` del orquestador.
 
-- Formularios para sincronización, provisionamiento y baja técnica.
-- Visualización de incidentes, auditorías y clientes en tiempo real.
-- Barra lateral para modificar URLs base, usuario (`X-Orchestrator-User`), lanzar `/reset` y consultar `/config`.
-- Herramientas para consultar y actualizar clientes en el mock de ISP-Cube sin recurrir a llamadas manuales.
+**Alertas configuradas** (archivo `monitoring/alerts.yml`):
+- Incidentes abiertos
+- Errores GeoGrid
+- Errores de sync
+- Pending en sync
+- Faltantes de caja/puerto
+- Coordenadas inválidas
+- Campos obligatorios faltantes
 
-Esta interfaz es útil para demostraciones y para usuarios que no desean interactuar directamente con los endpoints REST.
-
----
-
-## 10. Pruebas recomendadas
-
-Se propone la siguiente secuencia para validar el entorno tras cada despliegue o cambio relevante:
-
-1. Restablecer estado (`docker compose up --build` y `POST /reset`).
-2. Listar clientes demo disponibles (`GET http://localhost:8001/api/customers/customers_list?limit=5`).
-3. Ejecutar `/sync/customer` para `customer_id=2142` dos veces y verificar `created` / `updated` en GeoGrid.
-4. Deshabilitar la integración del cliente `2143` (`PUT /api/customers/2143`) y comprobar que `/sync/customer` devuelve `412 integration_disabled`.
-5. Alterar datos de red (por ejemplo, dejar `lat` vacío) y validar el `422 missing_fields`.
-6. Provisionar el cliente `2142` y confirmar que `/provision/onu` devuelve `status=assigned`.
-7. Intentar provisionar otro cliente reutilizando el mismo puerto para disparar `409 geogrid_assignment_conflict`.
-8. Ejecutar `/decommission/customer` sobre el cliente inactivo `2144` y revisar incidentes `decommission_*` en caso de asignaciones inexistentes.
-9. Consultar `/audits` y `/incidents` para verificar trazabilidad y repetir los flujos desde la UI Streamlit.
-
-La checklist puede automatizarse con scripts en `scripts/` o con pruebas basadas en `pytest` y `httpx`.
-
-### 10.1 Evidencia de pruebas manuales recientes
-
-Con el stack `docker compose up --build` en ejecución se verificaron los flujos principales mediante los siguientes comandos:
-
-- **Sincronización y provisión exitosa**
-  ```bash
-  curl -X POST http://localhost:8000/sync/customer \
-    -H 'Content-Type: application/json' \
-    -d '{"customer_id":2142}'
-
-  curl -X POST http://localhost:8000/provision/onu \
-    -H 'Content-Type: application/json' \
-    -d '{"customer_id":2142,"olt_id":1,"board":1,"pon_port":4,"onu_sn":"ZTEG12345678"}'
-  ```
-  Respuestas esperadas: `{"geogrid_id":1,"action":"updated"}` y `{"status":"assigned", ...}`.
-
-- **Conflicto por datos inconsistentes**
-  ```bash
-  curl -X POST http://localhost:8000/provision/onu \
-    -H 'Content-Type: application/json' \
-    -d '{"customer_id":2143,"olt_id":1,"board":1,"pon_port":4,"onu_sn":"OTROSN123"}'
-  ```
-  Respuesta: `409` con detalle de `hardware_mismatch`.
-
-- **Baja técnica completa**
-  ```bash
-  curl -X PUT http://localhost:8001/api/customers/2144 \
-    -H 'Content-Type: application/json' \
-    -d '{"integration_enabled":true,"status":"inactive"}'
-
-  curl -X POST http://localhost:8000/sync/customer \
-    -H 'Content-Type: application/json' \
-    -d '{"customer_id":2144}'
-
-  curl -X POST http://localhost:8000/provision/onu \
-    -H 'Content-Type: application/json' \
-    -d '{"customer_id":2144,"olt_id":2,"board":1,"pon_port":2,"onu_sn":"FHTT90213456"}'
-
-  curl -X PUT http://localhost:8001/api/customers/2144 \
-    -H 'Content-Type: application/json' \
-    -d '{"integration_enabled":false,"status":"inactive"}'
-
-  curl -X POST http://localhost:8000/decommission/customer \
-    -H 'Content-Type: application/json' \
-    -d '{"customer_id":2144}'
-  ```
-  Respuestas finales: sincronización `{"geogrid_id":2,"action":"updated"}`, provisión `{"status":"assigned", ...}`, baja `{"status":"removed","geogrid_id":2,"port":"OLT2-B1-P2"}`.
-
-Las ejecuciones anteriores se realizaron sobre los mocks incluidos en el repositorio y confirmaron que los flujos principales operan de extremo a extremo.
+**Métricas clave**
+- `orchestrator_customer_sync_total`
+- `orchestrator_incidents_total`
+- `orchestrator_integration_errors_total`
+- `orchestrator_request_latency_seconds`
 
 ---
 
-## 11. Runbook operativo
+## 11. Procedimiento de prueba (entorno real)
 
-### 11.1 Incidentes de hardware (`hardware_mismatch`, `geogrid_assignment_conflict`)
-
-1. **Identificación**  
-   - Revisar el panel “Incidentes abiertos” en Grafana o `GET /incidents?kind=geogrid_assignment_conflict`.  
-   - Capturar `customer_id`, `olt_id`, `board`, `pon_port`, `requested_onu_sn` y el mensaje detallado.
-2. **Análisis**  
-   - Para `hardware_mismatch`: comparar la información de ISP-Cube con el hardware real y corregir la discrepancia.  
-   - Para `geogrid_assignment_conflict`: liberar el puerto en GeoGrid o reasignarlo al cliente correcto antes de reintentar.
-3. **Remediación**  
-   - Actualizar datos en los sistemas necesarios.  
-   - Reintentar el proceso de provisión o baja y corroborar el éxito.
-4. **Cierre**  
-   - Verificar que `GET /incidents` ya no muestre el caso y que `GET /incidents/resolved` indique la resolución con `resolved_by` y `resolution_reason`.
-
-### 11.2 Reset de mocks y servicios
-
-1. `POST /reset` sobre el orquestador: limpia incidentes, auditorías, eventos y reinicia los mocks.  
-2. `docker compose restart` para reinicios suaves o `docker compose down && docker compose up -d` tras cambios de configuración.  
-3. Confirmar salud con `GET /health` de cada mock y `GET /config` para revisar `dry_run` y endpoints activos.
-
-### 11.3 Responsabilidades
-
-- **Operaciones**: monitoreo de dashboards, ejecución de runbooks y escalado.  
-- **Ingeniería**: mantenimiento del código, evolución de reglas y soporte de alertas.  
-- **Infraestructura**: cuidado del stack de observabilidad (Prometheus, Grafana, Alertmanager) y backups de `data/state.db`.
+1) Preparar caja y puertos en GeoGrid.
+2) En ISP‑Cube crear la conexión con:
+   - Caja FTTH y puerto
+   - Lat/Lon correctos
+3) Esperar al cron (15 min) o forzar el poller.
+4) Verificar en GeoGrid: casita + drop + comentario.
+5) Revisar Grafana (syncs, incidentes).
 
 ---
 
-## 12. Checklist operativo
+## 12. Troubleshooting rápido
 
-### 12.1 Revisión diaria
+**No aparece nada en GeoGrid**
+- Verificar si hay movimiento en `connections_provisioning_logs`.
+- Confirmar `ftth_port_id` y `ftth_port.nro` en ISP‑Cube.
 
-- [ ] Dashboards sin alertas *firing* en Prometheus/Grafana.  
-- [ ] `GET /incidents` vacío o con casos documentados en curso.  
-- [ ] Eventos recientes visibles en el mapa y auditorías registradas en `/audits`.  
-- [ ] Verificar respaldo/espacio disponible del archivo `data/state.db` (o el path configurado).
+**401 en ISP‑Cube**
+- Renovar bearer con `scripts/refresh_isp_token.sh`.
 
-### 12.2 Pre despliegue
+**GeoGrid responde `erro de conexão`**
+- Revisar Token Google en GeoGrid y facturación.
 
-- [ ] Ejecutar smoke tests (`scripts/smoke.sh` o pipeline).  
-- [ ] Respaldar dashboards personalizados y la base de estado.  
-- [ ] Notificar ventana de cambio a Operaciones y chequear que no existan incidentes críticos abiertos.
-
-### 12.3 Post despliegue
-
-- [ ] Validar `/metrics`, `/health` y paneles principales.  
-- [ ] Confirmar que auditorías, eventos y mapa registran las nuevas operaciones.  
-- [ ] Documentar hallazgos en el runbook si se aplicaron pasos adicionales.
+**Conflictos de porta**
+- Verificar puerto disponible o `geogrid_assignment_conflict`.
 
 ---
 
-## 13. Extensión y mantenimiento
+## 13. Scripts útiles
 
-- **Entornos reales**: ajustar los JSON en `config/environments`, definir secretos mediante variables de entorno y habilitar `verify_tls`.
-- **Persistencia**: si se requiere histórico más allá de la memoria del proceso, adaptar `record_audit` y `record_incident` para almacenar registros en una base de datos externa.
-- **Nuevos servicios o regiones**: extender `EnvConfig` agregando entradas y reutilizando las funciones de resolución de región.
-- **Observabilidad adicional**: integrar Loki u otro agregador de logs para complementar las métricas existentes.
-- **Estrategias de resiliencia**: revisar parámetros de reintento y circuit breaker al apuntar a APIs reales para alinearlos con SLA y capacidad de los upstreams.
-
----
-
-## 14. Recursos complementarios
-
-- `diagrama.mmd`: descripción visual de la arquitectura.
-- `mocks/`: implementación detallada de las APIs simuladas.
-- `monitoring/`: dashboards y configuración de métricas.
-- `ui/`: código de la interfaz Streamlit.
-- `scripts/`: utilitarios reutilizables para operaciones o pruebas.
-
-Con esta información se puede comprender la arquitectura completa, ejecutar los flujos principales y adaptar el Orquestador Intercity a distintos escenarios de integración.
+- `scripts/poll_isp_connections.py` → poller ISP → orquestador
+- `scripts/retry_incidents.py` → reintento de incidentes
+- `scripts/replay_provisioning.py` → reconciliación sin mover cursor
+- `scripts/recomment_drop.py` → reescribe comentario del drop (opcional)
 
 ---
 
-## 15. Job automático para altas recientes
+## 14. Estado del proyecto (criterios de éxito)
 
-El script `scripts/poll_isp_connections.py` consulta el endpoint oficial `connections_provisioning_logs` de ISP-Cube y dispara `/sync/customer` por cada movimiento `create_connection` detectado. Así, cualquier alta creada en el OSS se replica en GeoGrid sin intervención manual.
+El sistema está listo para pruebas controladas cuando:
+- ISP‑Cube emite correctamente los movimientos.
+- GeoGrid tiene infraestructura base (cajas/puertos).
+- El orquestador procesa sin incidentes críticos.
 
-### 15.1 Requisitos
-
-1. Exportar las variables ISP (`ISP_BASE_URL`, `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_USERNAME`, `ISP_BEARER`). Lo más práctico es `source .env` antes de ejecutar el job.  
-2. Opcional: `ORCHESTRATOR_BASE_URL` (default `http://localhost:8000`), `ORCHESTRATOR_USER_HEADER` y `ORCHESTRATOR_STATE_DIR` para personalizar el header y la carpeta donde se almacena el cursor.
-
-### 15.2 Uso básico
-
-```bash
-chmod +x scripts/poll_isp_connections.py
-./scripts/poll_isp_connections.py --lookback-hours 12
-```
-
-El job crea `.state/connections_provisioning.cursor` y guarda el último `created_at` procesado en UTC. Si querés revisar sin impactar GeoGrid:
-
-```bash
-./scripts/poll_isp_connections.py --dry-run --since 2025-11-13T00:00:00Z
-```
-
-Cada ejecución también escribe un resumen en `.state/connections_provisioning.status.json` (inicio/fin, cantidad procesada, mensajes de warning). Ese archivo puede leerse desde Grafana o incluido en informes para demostrar cuándo corrió por última vez.
-
-### 15.3 Scheduling recomendado
-
-Ejemplo de cron cada 15 minutos:
-
-```cron
-*/15 * * * * cd /ruta/al/proyecto && source .env && ./scripts/poll_isp_connections.py >> logs/provisioning.log 2>&1
-```
-
-También podés envolverlo en systemd o Docker; el job es idempotente mientras conserve el cursor.
-
-### 15.4 Extensiones
-
-- Reaccionar a `delete_connection` para disparar `/decommission/customer`.
-- Emitir métricas Prometheus propias (altas detectadas, errores por corrida).
-- Publicar los eventos procesados en una cola para análisis posterior.
+En producción, la calidad de datos es el factor más determinante.
 
 ---
 
-## 16. Rama `orquestador-coordenadas`
+## 15. Licencia
 
-Cuando en ISP-Cube todavía no existe el inventario de cajas/puertos, podés trabajar sobre la rama `orquestador-coordenadas`. Allí el orquestador sólo exige los atributos básicos (nombre, dirección, lat/lng) y permite sincronizar altas aunque falten `olt_id`, `pon`, `ftthbox_id`, etc. Cada vez que detecta que esos campos aún no están cargados genera un incidente `missing_network_keys` pero no bloquea la creación del cliente en GeoGrid. Una vez que el plantel exterior cargue la información completa, basta con volver a la rama principal para reactivar las validaciones estrictas.
+Ver `LICENSE`.

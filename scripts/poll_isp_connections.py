@@ -32,7 +32,7 @@ UTC = timezone.utc
 DEFAULT_LOOKBACK_HOURS = 6
 DEFAULT_STATE_DIR = Path(os.getenv("ORCHESTRATOR_STATE_DIR", ".state"))
 STATE_FILE = DEFAULT_STATE_DIR / "connections_provisioning.cursor"
-STATUS_FILE = DEFAULT_STATE_DIR / "connections_provisioning.status.json"
+DEFAULT_STATUS_FILE = DEFAULT_STATE_DIR / "connections_provisioning.status.json"
 PROCESSABLE_MOVEMENTS = {"create_connection", "ftth_change"}
 
 REQUIRED_ISP_VARS = [
@@ -85,10 +85,11 @@ def save_cursor(ts: datetime) -> None:
     STATE_FILE.write_text(ts.astimezone(UTC).isoformat(), encoding="utf-8")
 
 
-def write_status(payload: Dict[str, Any]) -> None:
+def write_status(payload: Dict[str, Any], status_file: Optional[Path] = None) -> None:
     _ensure_state_dir()
     try:
-        STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        target = status_file or DEFAULT_STATUS_FILE
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as exc:
         logger.warning("Unable to persist status file: %s", exc)
 
@@ -272,6 +273,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Lista movimientos pero no llama al orquestador.",
     )
+    parser.add_argument(
+        "--no-cursor",
+        action="store_true",
+        help="No lee ni actualiza el cursor (modo reconciliación).",
+    )
+    parser.add_argument(
+        "--status-file",
+        help="Ruta opcional para guardar el status JSON del job.",
+    )
     return parser
 
 
@@ -295,6 +305,7 @@ def main() -> None:
         "cursor_before": None,
         "cursor_after": None,
     }
+    status_file = Path(args.status_file).expanduser() if args.status_file else DEFAULT_STATUS_FILE
     try:
         validate_env()
 
@@ -302,7 +313,7 @@ def main() -> None:
         user_header = os.getenv("ORCHESTRATOR_USER_HEADER", "X-Orchestrator-User")
         isp_base = _read_env("ISP_BASE_URL").rstrip("/")
 
-        cursor_ts = load_cursor()
+        cursor_ts = None if args.no_cursor else load_cursor()
         if args.since:
             cursor_ts = _parse_iso(args.since)
         if cursor_ts is None:
@@ -318,7 +329,7 @@ def main() -> None:
             status_payload["result"] = "warning"
             status_payload["message"] = "provisioning_logs_disabled"
             status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
-            write_status(status_payload)
+            write_status(status_payload, status_file=status_file)
             return
 
         if not logs:
@@ -326,7 +337,7 @@ def main() -> None:
             status_payload["result"] = "ok"
             status_payload["message"] = "sin_movimientos"
             status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
-            write_status(status_payload)
+            write_status(status_payload, status_file=status_file)
             return
 
         if args.dry_run:
@@ -362,17 +373,20 @@ def main() -> None:
         status_payload["message"] = "movimientos_procesados"
 
         if max_ts:
-            save_cursor(max_ts)
-            logger.info("Cursor actualizado a %s", max_ts.isoformat())
             status_payload["cursor_after"] = max_ts.isoformat()
+            if args.no_cursor:
+                logger.info("Modo sin cursor: no se actualiza cursor (max_ts=%s)", max_ts.isoformat())
+            else:
+                save_cursor(max_ts)
+                logger.info("Cursor actualizado a %s", max_ts.isoformat())
 
         status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
-        write_status(status_payload)
+        write_status(status_payload, status_file=status_file)
     except Exception as exc:
         status_payload["result"] = "error"
         status_payload["message"] = str(exc)
         status_payload["run_completed"] = datetime.now(tz=UTC).isoformat()
-        write_status(status_payload)
+        write_status(status_payload, status_file=status_file)
         raise
 
 
