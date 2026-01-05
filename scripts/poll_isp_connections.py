@@ -33,6 +33,7 @@ DEFAULT_LOOKBACK_HOURS = 6
 DEFAULT_STATE_DIR = Path(os.getenv("ORCHESTRATOR_STATE_DIR", ".state"))
 STATE_FILE = DEFAULT_STATE_DIR / "connections_provisioning.cursor"
 STATUS_FILE = DEFAULT_STATE_DIR / "connections_provisioning.status.json"
+PROCESSABLE_MOVEMENTS = {"create_connection", "ftth_change"}
 
 REQUIRED_ISP_VARS = [
     "ISP_BASE_URL",
@@ -190,14 +191,15 @@ def process_logs(
     max_ts: Optional[datetime] = None
     processed = 0
     skipped = 0
-    seen_connections: set[int] = set()
+    min_ts = datetime.min.replace(tzinfo=UTC)
+    candidates: Dict[int, tuple[datetime, Dict[str, Any]]] = {}
     with httpx.Client() as orch_client:
-        for entry in sorted(logs, key=_movement_timestamp):
+        for entry in logs:
             movement_type = entry.get("movement_type")
             movement_ts = _movement_timestamp(entry)
             if movement_ts and (max_ts is None or movement_ts > max_ts):
                 max_ts = movement_ts
-            if movement_type != "create_connection":
+            if movement_type not in PROCESSABLE_MOVEMENTS:
                 skipped += 1
                 continue
             connection_id = entry.get("connection_id")
@@ -209,17 +211,19 @@ def process_logs(
             except (TypeError, ValueError):
                 skipped += 1
                 continue
-            if connection_id_int in seen_connections:
-                skipped += 1
-                logger.info(
-                    "Omitiendo conexion duplicada en el batch connection_id=%s",
-                    connection_id_int,
-                )
-                continue
-            seen_connections.add(connection_id_int)
+            entry_ts = movement_ts or min_ts
+            existing = candidates.get(connection_id_int)
+            if existing is None or entry_ts > existing[0]:
+                candidates[connection_id_int] = (entry_ts, entry)
+
+        for connection_id_int, (_, entry) in sorted(
+            candidates.items(), key=lambda item: item[1][0]
+        ):
+            movement_type = entry.get("movement_type") or "unknown"
             logger.info(
-                "Procesando conexion=%s nombre=%s",
+                "Procesando conexion=%s tipo=%s nombre=%s",
                 connection_id_int,
+                movement_type,
                 entry.get("customer_name"),
             )
             try:
@@ -338,7 +342,12 @@ def main() -> None:
                 filter(None, (_movement_timestamp(entry) for entry in logs)),
                 default=None,
             )
-            processed = sum(1 for entry in logs if entry.get("movement_type") == "create_connection" and entry.get("connection_id") is not None)
+            processed = sum(
+                1
+                for entry in logs
+                if entry.get("movement_type") in PROCESSABLE_MOVEMENTS
+                and entry.get("connection_id") is not None
+            )
             skipped = len(logs) - processed
         else:
             max_ts, processed, skipped = process_logs(

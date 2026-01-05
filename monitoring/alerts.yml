@@ -17,3 +17,43 @@
          annotations:
            summary: "Fallas recurrentes al integrar con GeoGrid"
            description: "Se detectaron errores al llamar a GeoGrid durante los últimos 5 minutos."
+       - alert: OrchestratorSyncErrors
+         expr: increase(orchestrator_customer_sync_total{result="error"}[15m]) > 0
+         for: 10m
+         labels:
+           severity: critical
+         annotations:
+           summary: "Errores en sincronización de clientes"
+           description: "Se detectaron fallas en /sync/customer durante los últimos 15 minutos."
+       - alert: OrchestratorSyncPending
+         expr: increase(orchestrator_customer_sync_total{result="pending"}[30m]) > 0
+         for: 15m
+         labels:
+           severity: warning
+         annotations:
+           summary: "Sincronizaciones en estado pending"
+           description: "Hubo clientes con sincronización pendiente (GeoGrid no disponible o sin respuesta) en los últimos 30 minutos."
+       - alert: OrchestratorMissingGeoGridAssignment
+         expr: increase(orchestrator_incidents_total{kind="missing_geogrid_assignment"}[30m]) > 0
+         for: 15m
+         labels:
+           severity: warning
+         annotations:
+           summary: "Faltan datos de caja/puerto para GeoGrid"
+           description: "Se registraron incidentes de faltantes de caja/puerto en los últimos 30 minutos."
+       - alert: OrchestratorInvalidCoordinates
+         expr: increase(orchestrator_incidents_total{kind="invalid_coordinates"}[30m]) > 0
+         for: 15m
+         labels:
+           severity: warning
+         annotations:
+           summary: "Coordenadas inválidas"
+           description: "Se registraron incidentes por coordenadas inválidas en los últimos 30 minutos."
+       - alert: OrchestratorMissingFields
+         expr: increase(orchestrator_incidents_total{kind="missing_fields"}[30m]) > 0
+         for: 15m
+         labels:
+           severity: warning
+         annotations:
+           summary: "Campos obligatorios faltantes"
+           description: "Se registraron incidentes por campos obligatorios faltantes en los últimos 30 minutos."

@@ -22,7 +22,9 @@
             "client-id": "env:ISP_CLIENT_ID",
             "login-type": "api",
             "username": "env:ISP_USERNAME",
-            "Authorization": "env:ISP_BEARER"
+            "Authorization": "env:ISP_BEARER",
+            "Accept": "application/json",
+            "Content-Type": "application/json"
           }
         }
       }
