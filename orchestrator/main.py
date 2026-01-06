@@ -520,7 +520,7 @@ INCIDENT_RESOLVED_COUNTER = Counter(
 CUSTOMER_EVENT_COUNTER = Counter(
     "orchestrator_customer_events_total",
     "Altas y bajas de clientes registradas por zona",
-    ["event_type", "zone"],
+    ["event_type", "zone", "source"],
 )
 INCIDENT_GAUGE = Gauge(
     "orchestrator_incidents_buffer_size",
@@ -974,7 +974,7 @@ def _format_customer_label(
         return "Cliente sin identificar"
     if len(parts) == 1:
         return parts[0]
-    return " – ".join(parts)
+    return " ".join(parts)
 
 
 def _ensure_latest_events_cache() -> None:
@@ -1503,6 +1503,21 @@ def register_customer_event(
         customer_id if customer_id is not None else customer.get("customer_id") if customer else None
     )
     previous_event = _latest_customer_event(event_customer_id)
+    movement_id = None
+    if metadata:
+        movement_id = metadata.get("movement_id")
+    if movement_id is not None:
+        movement_id_value = str(movement_id).strip()
+        if movement_id_value:
+            for existing in reversed(CUSTOMER_EVENTS):
+                if existing.get("event_type") != event_type:
+                    continue
+                existing_meta = existing.get("metadata") or {}
+                existing_id = existing_meta.get("movement_id")
+                if existing_id is None:
+                    continue
+                if str(existing_id).strip() == movement_id_value:
+                    return existing
 
     zone_candidate = zone or (customer.get("zone") if customer else None)
     if _is_blank(zone_candidate) and previous_event and not _is_blank(previous_event.get("zone")):
@@ -1548,20 +1563,20 @@ def register_customer_event(
             lon_value = fallback_lon if fallback_lon is not None else DEFAULT_COORDINATE_FALLBACK[1]
 
     connection_id: Optional[str] = None
-    if customer:
+    if metadata:
+        raw_connection = metadata.get("connection_id")
+        if raw_connection:
+            connection_id = str(raw_connection).strip()
+    if not connection_id and customer:
         raw_code = customer.get("code")
         raw_customer_id = customer.get("customer_id")
         if raw_code:
             connection_id = str(raw_code).strip()
         elif raw_customer_id is not None:
             connection_id = str(raw_customer_id).strip()
-    if not connection_id and metadata:
-        raw_connection = metadata.get("connection_id")
-        if raw_connection:
-            connection_id = str(raw_connection).strip()
 
     if connection_id and customer_name:
-        display_label = f"{connection_id} - {customer_name}"
+        display_label = f"{connection_id} {customer_name}"
     elif connection_id:
         display_label = connection_id
     else:
@@ -1573,6 +1588,7 @@ def register_customer_event(
     else:
         timestamp_str = event_timestamp.isoformat()
 
+    safe_source = source or "runtime"
     event_entry: Dict[str, Any] = {
         "event_id": str(uuid4()),
         "timestamp": timestamp_str,
@@ -1582,7 +1598,7 @@ def register_customer_event(
         "customer_id": event_customer_id,
         "lat": lat_value,
         "lon": lon_value,
-        "source": source,
+        "source": safe_source,
         "metadata": metadata or {},
         "customer_name": customer_name or "",
         "connection_id": connection_id,
@@ -1600,7 +1616,11 @@ def register_customer_event(
         # Enforce a similar cap as the main buffer to avoid unbounded growth
         while len(LATEST_CUSTOMER_EVENTS) > CUSTOMER_EVENT_BUFFER_SIZE:
             LATEST_CUSTOMER_EVENTS.popitem(last=False)
-    CUSTOMER_EVENT_COUNTER.labels(event_type=event_type, zone=safe_zone).inc()
+    CUSTOMER_EVENT_COUNTER.labels(
+        event_type=event_type,
+        zone=safe_zone,
+        source=safe_source,
+    ).inc()
     try:
         persistence_store.save_customer_event(event_entry)
         persistence_store.purge_customer_events()
@@ -1686,7 +1706,7 @@ def record_incident(kind: str, detail: Dict[str, Any]) -> None:
     connection_label = detail_copy.get("connection_id") or ctx.get("connection_id")
     if connection_label is not None:
         name_component = detail_copy.get("customer_name") or detail_copy.get("customer_id")
-        detail_copy["customer_label"] = f"{connection_label} - {name_component or ''}".strip()
+        detail_copy["customer_label"] = f"{connection_label} {name_component or ''}".strip()
     else:
         detail_copy["customer_label"] = _format_customer_label(
             detail_copy.get("customer_id"), detail_copy.get("customer_name")
@@ -1749,6 +1769,7 @@ def _filter_customer_events(
     *,
     zone: Optional[str] = None,
     event_type: Optional[str] = None,
+    source: Optional[str] = None,
     latest_per_customer: bool = False,
 ) -> List[Dict[str, Any]]:
     since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
@@ -1775,6 +1796,8 @@ def _filter_customer_events(
                 continue
             if event_type and event_copy.get("event_type") != event_type:
                 continue
+            if source and event_copy.get("source") != source:
+                continue
             selected.append(event_copy)
     else:
         for event in reversed(CUSTOMER_EVENTS):
@@ -1786,6 +1809,8 @@ def _filter_customer_events(
             if zone and event_copy.get("zone") != zone:
                 continue
             if event_type and event_copy.get("event_type") != event_type:
+                continue
+            if source and event_copy.get("source") != source:
                 continue
             selected.append(event_copy)
     return selected
@@ -2904,7 +2929,7 @@ async def geogrid_attend(
             porta_num=payload.geogrid_porta_num,  # type: ignore[arg-type]
         )
 
-    # Determinar el ponto de acesso: si no viene, crearlo con label "<codigo> - <cliente>"
+    # Determinar el ponto de acesso: si no viene, crearlo con label "<codigo> <cliente>"
     access_point_id = payload.id_item_rede_cliente
     if access_point_id is None:
         if payload.latitude is None or payload.longitude is None:
@@ -2931,7 +2956,7 @@ async def geogrid_attend(
         customer_name = geogrid_cliente.get("nome") or geogrid_cliente.get("name") or ""
         access_label = payload.codigo_integracion
         if customer_name:
-            access_label = f"{payload.codigo_integracion} - {customer_name}"
+            access_label = f"{payload.codigo_integracion} {customer_name}"
         access_point_id = await geogrid_service.create_access_point(
             settings,
             latitude=payload.latitude,
@@ -3561,8 +3586,17 @@ async def get_customer_events(
         default=None,
         description="Filtra por tipo de evento.",
     ),
+    source: Optional[str] = Query(
+        default=None,
+        description="Filtra por origen del evento.",
+    ),
 ) -> List[Dict[str, Any]]:
-    events = _filter_customer_events(lookback_days, zone=zone, event_type=event_type)
+    events = _filter_customer_events(
+        lookback_days,
+        zone=zone,
+        event_type=event_type,
+        source=source,
+    )
     return events[:limit]
 
 
@@ -3585,8 +3619,17 @@ async def get_customer_events_summary(
         default=None,
         description="Filtra por tipo de evento.",
     ),
+    source: Optional[str] = Query(
+        default=None,
+        description="Filtra por origen del evento.",
+    ),
 ) -> Dict[str, Any]:
-    events = _filter_customer_events(lookback_days, zone=zone, event_type=event_type)
+    events = _filter_customer_events(
+        lookback_days,
+        zone=zone,
+        event_type=event_type,
+        source=source,
+    )
     totals, zones = _summarize_customer_events(events)
     stats = [
         {"metric": "altas", "value": totals["altas"]},
@@ -3599,6 +3642,7 @@ async def get_customer_events_summary(
         "filters": {
             "zone": zone,
             "event_type": event_type,
+            "source": source,
         },
         "stats": stats,
         "totals": totals,
@@ -3625,8 +3669,17 @@ async def get_customer_event_metrics(
         default=None,
         description="Filtra por tipo de evento.",
     ),
+    source: Optional[str] = Query(
+        default=None,
+        description="Filtra por origen del evento.",
+    ),
 ) -> Dict[str, Any]:
-    events = _filter_customer_events(lookback_days, zone=zone, event_type=event_type)
+    events = _filter_customer_events(
+        lookback_days,
+        zone=zone,
+        event_type=event_type,
+        source=source,
+    )
     totals, _ = _summarize_customer_events(events)
     return {
         "altas": totals["altas"],
@@ -3650,8 +3703,16 @@ async def get_customer_events_time_series(
         default=None,
         description="Filtra por zona/barrio exacto.",
     ),
+    source: Optional[str] = Query(
+        default=None,
+        description="Filtra por origen del evento.",
+    ),
 ) -> List[Dict[str, Any]]:
-    events = _filter_customer_events(lookback_days, zone=zone)
+    events = _filter_customer_events(
+        lookback_days,
+        zone=zone,
+        source=source,
+    )
     buckets: Dict[Tuple[str, date], Dict[str, Any]] = defaultdict(
         lambda: {"altas": 0, "bajas": 0, "lat": None, "lon": None}
     )
@@ -3713,8 +3774,16 @@ async def get_customer_events_geo(
         default=None,
         description="Filtra por zona/barrio exacto.",
     ),
+    source: Optional[str] = Query(
+        default=None,
+        description="Filtra por origen del evento.",
+    ),
 ) -> Dict[str, List[Dict[str, Any]]]:
-    events = _filter_customer_events(lookback_days, zone=zone)
+    events = _filter_customer_events(
+        lookback_days,
+        zone=zone,
+        source=source,
+    )
     altas: List[Dict[str, Any]] = []
     bajas: List[Dict[str, Any]] = []
     for event in events:
@@ -3756,11 +3825,16 @@ async def get_customer_events_map_altas(
         default=None,
         description="Filtra por zona/barrio exacto.",
     ),
+    source: Optional[str] = Query(
+        default=None,
+        description="Filtra por origen del evento.",
+    ),
 ) -> Dict[str, Any]:
     events = _filter_customer_events(
         lookback_days,
         zone=zone,
         event_type="alta",
+        source=source,
         latest_per_customer=True,
     )
     feature_collection = _events_to_feature_collection(events)
@@ -3784,11 +3858,16 @@ async def get_customer_events_map_bajas(
         default=None,
         description="Filtra por zona/barrio exacto.",
     ),
+    source: Optional[str] = Query(
+        default=None,
+        description="Filtra por origen del evento.",
+    ),
 ) -> Dict[str, Any]:
     events = _filter_customer_events(
         lookback_days,
         zone=zone,
         event_type="baja",
+        source=source,
         latest_per_customer=True,
     )
     feature_collection = _events_to_feature_collection(events)
@@ -3835,12 +3914,16 @@ async def grafana_query(request: Request) -> List[Dict[str, Any]]:
         event_type = target_payload.get("event_type")
         if event_type not in {"alta", "baja"}:
             event_type = None
+        source_filter = target_payload.get("source")
+        if isinstance(source_filter, str) and not source_filter.strip():
+            source_filter = None
 
         if target_name == "customer_events_map":
             events = _filter_customer_events(
                 lookback_days,
                 zone=zone_filter,
                 event_type=event_type,
+                source=source_filter,
                 latest_per_customer=True,
             )
             resolved_events = [_event_with_resolved_coordinates(event) for event in events]

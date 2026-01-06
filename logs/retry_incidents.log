@@ -1,1 +1,69 @@
 /bin/sh: 1: ./scripts/retry_incidents.py: Permission denied
+2026-01-06 10:05:14,431 INFO retry-incidents :: Buscando incidentes desde 2026-01-05T13:05:14.431607+00:00 (kinds=['missing_geogrid_assignment', 'geogrid_unavailable'])
+Traceback (most recent call last):
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 101, in handle_request
+    raise exc
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 78, in handle_request
+    stream = self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_sync/connection.py", line 124, in _connect
+    stream = self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_backends/sync.py", line 207, in connect_tcp
+    with map_exceptions(exc_map):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno 111] Connection refused
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/retry_incidents.py", line 160, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/manu/Desktop/orquestador_intercity-develop/./scripts/retry_incidents.py", line 118, in main
+    response = client.get("/incidents")
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1053, in get
+    return self.request(
+           ^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno 111] Connection refused
+2026-01-06 12:05:01,934 INFO retry-incidents :: Buscando incidentes desde 2026-01-05T15:05:01.934754+00:00 (kinds=['missing_geogrid_assignment', 'geogrid_unavailable'])
+2026-01-06 12:05:02,057 INFO retry-incidents :: HTTP Request: GET http://localhost:8000/incidents "HTTP/1.1 200 OK"
+2026-01-06 12:05:02,058 INFO retry-incidents :: Incidentes a reintentar: 3
+2026-01-06 12:05:02,058 WARNING retry-incidents :: Incidente sin connection_id: c5f38465-021d-4e66-8353-064805143718
+2026-01-06 12:05:02,058 WARNING retry-incidents :: Incidente sin connection_id: 22b06b80-a35c-46cd-9c8a-d9b5147b988c
+2026-01-06 12:05:02,058 WARNING retry-incidents :: Incidente sin connection_id: 6fb9ed4b-2855-4093-9640-c466ac4574fb

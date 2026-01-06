@@ -1,0 +1,203 @@
+2026-01-06 10:07:01,837 INFO poll-isp :: Consultando ISP logs desde 2026-01-05T13:07:01
+2026-01-06 10:07:03,167 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2026-01-05T13%3A07%3A01 "HTTP/1.1 200 OK"
+2026-01-06 10:07:03,230 INFO poll-isp :: Procesando conexion=11025 tipo=ftth_change nombre=None
+2026-01-06 10:07:22,542 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:07:22,547 INFO poll-isp :: Sync OK connection_id=11025 :: {'geogrid_id': 18819, 'action': 'existing', 'connection_id': 11025, 'connection_code': '013915'}
+2026-01-06 10:07:22,548 INFO poll-isp :: Procesando conexion=11026 tipo=create_connection nombre=VILTE OSCAR ALBERTO
+2026-01-06 10:07:38,802 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:07:38,805 INFO poll-isp :: Sync OK connection_id=11026 :: {'geogrid_id': 18829, 'action': 'created', 'connection_id': 11026, 'connection_code': '014910'}
+2026-01-06 10:07:38,807 INFO poll-isp :: Procesando conexion=11027 tipo=create_connection nombre=LESCANO MATEO
+2026-01-06 10:07:57,704 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:07:57,705 INFO poll-isp :: Sync OK connection_id=11027 :: {'geogrid_id': 18830, 'action': 'created', 'connection_id': 11027, 'connection_code': '014918'}
+2026-01-06 10:07:57,706 INFO poll-isp :: Procesando conexion=11028 tipo=create_connection nombre=MORALES OSCAR AMADO 765
+2026-01-06 10:08:23,624 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:08:23,625 INFO poll-isp :: Sync OK connection_id=11028 :: {'geogrid_id': 18831, 'action': 'created', 'connection_id': 11028, 'connection_code': '014866'}
+2026-01-06 10:08:23,625 INFO poll-isp :: Procesando conexion=11029 tipo=create_connection nombre=DEBIA HECTOR RAMON 325
+2026-01-06 10:08:44,194 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:08:44,196 INFO poll-isp :: Sync OK connection_id=11029 :: {'geogrid_id': 18832, 'action': 'created', 'connection_id': 11029, 'connection_code': '014903'}
+2026-01-06 10:08:44,196 INFO poll-isp :: Procesando conexion=11030 tipo=create_connection nombre=BESSONE PIERINA PAULA 2804
+2026-01-06 10:09:04,020 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:09:04,020 INFO poll-isp :: Sync OK connection_id=11030 :: {'geogrid_id': 18824, 'action': 'existing', 'connection_id': 11030, 'connection_code': '014870'}
+2026-01-06 10:09:04,020 INFO poll-isp :: Procesando conexion=11031 tipo=create_connection nombre=MEDINA JUAN FABIO
+2026-01-06 10:09:23,596 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:09:23,597 INFO poll-isp :: Sync OK connection_id=11031 :: {'geogrid_id': 18825, 'action': 'existing', 'connection_id': 11031, 'connection_code': '014908'}
+2026-01-06 10:09:23,597 INFO poll-isp :: Procesando conexion=11032 tipo=create_connection nombre=CRIADO ANDRES ARMANDO 14
+2026-01-06 10:09:43,098 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:09:43,098 INFO poll-isp :: Sync OK connection_id=11032 :: {'geogrid_id': 18826, 'action': 'existing', 'connection_id': 11032, 'connection_code': '014917'}
+2026-01-06 10:09:43,098 INFO poll-isp :: Procesando conexion=11033 tipo=create_connection nombre=VARELA MARIO LORENZO 7653
+2026-01-06 10:10:03,017 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:10:03,018 INFO poll-isp :: Sync OK connection_id=11033 :: {'geogrid_id': 18833, 'action': 'created', 'connection_id': 11033, 'connection_code': '014905'}
+2026-01-06 10:10:03,019 INFO poll-isp :: Procesando conexion=11034 tipo=create_connection nombre=VARELA MARIO LORENZO 7653
+2026-01-06 10:10:28,209 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 10:10:28,209 INFO poll-isp :: Sync OK connection_id=11034 :: {'geogrid_id': 18834, 'action': 'created', 'connection_id': 11034, 'connection_code': '014905'}
+2026-01-06 10:10:28,209 INFO poll-isp :: Procesando conexion=11035 tipo=create_connection nombre=ANDRADA GILBERTO 73
+2026-01-06 10:10:28,975 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 401 Unauthorized"
+2026-01-06 10:10:28,976 ERROR poll-isp :: Sync fallo para connection_id=11035 -> 401 {"detail":{"service":"isp","region":"default","upstream_detail":{"message":"Unauthenticated."}}}
+2026-01-06 10:10:28,976 ERROR poll-isp :: Error sincronizando connection_id=11040 (entry=create_connection:11035)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 231, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 170, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2026-01-06 10:10:28,979 INFO poll-isp :: Procesando conexion=11036 tipo=create_connection nombre=ANDRADA GILBERTO 73
+2026-01-06 10:10:29,663 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 401 Unauthorized"
+2026-01-06 10:10:29,665 ERROR poll-isp :: Sync fallo para connection_id=11036 -> 401 {"detail":{"service":"isp","region":"default","upstream_detail":{"message":"Unauthenticated."}}}
+2026-01-06 10:10:29,666 ERROR poll-isp :: Error sincronizando connection_id=11040 (entry=create_connection:11036)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 231, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 170, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2026-01-06 10:10:29,666 INFO poll-isp :: Procesando conexion=11037 tipo=create_connection nombre=TORRES CARLOS B. 1125
+2026-01-06 10:10:30,209 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 401 Unauthorized"
+2026-01-06 10:10:30,209 ERROR poll-isp :: Sync fallo para connection_id=11037 -> 401 {"detail":{"service":"isp","region":"default","upstream_detail":{"message":"Unauthenticated."}}}
+2026-01-06 10:10:30,210 ERROR poll-isp :: Error sincronizando connection_id=11040 (entry=create_connection:11037)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 231, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 170, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2026-01-06 10:10:30,212 INFO poll-isp :: Procesando conexion=11038 tipo=create_connection nombre=TORRES CARLOS B. 1125
+2026-01-06 10:10:30,725 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 401 Unauthorized"
+2026-01-06 10:10:30,725 ERROR poll-isp :: Sync fallo para connection_id=11038 -> 401 {"detail":{"service":"isp","region":"default","upstream_detail":{"message":"Unauthenticated."}}}
+2026-01-06 10:10:30,725 ERROR poll-isp :: Error sincronizando connection_id=11040 (entry=create_connection:11038)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 231, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 170, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2026-01-06 10:10:30,726 INFO poll-isp :: Procesando conexion=11039 tipo=create_connection nombre=ESPINDOLA SERGIO ALFREDO 6501
+2026-01-06 10:10:31,633 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 401 Unauthorized"
+2026-01-06 10:10:31,634 ERROR poll-isp :: Sync fallo para connection_id=11039 -> 401 {"detail":{"service":"isp","region":"default","upstream_detail":{"message":"Unauthenticated."}}}
+2026-01-06 10:10:31,635 ERROR poll-isp :: Error sincronizando connection_id=11040 (entry=create_connection:11039)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 231, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 170, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2026-01-06 10:10:31,704 INFO poll-isp :: Procesando conexion=11040 tipo=create_connection nombre=PENA FRANKLIN
+2026-01-06 10:10:32,427 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 401 Unauthorized"
+2026-01-06 10:10:32,428 ERROR poll-isp :: Sync fallo para connection_id=11040 -> 401 {"detail":{"service":"isp","region":"default","upstream_detail":{"message":"Unauthenticated."}}}
+2026-01-06 10:10:32,428 ERROR poll-isp :: Error sincronizando connection_id=11040 (entry=create_connection:11040)
+Traceback (most recent call last):
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 231, in process_logs
+    sync_connection(
+  File "/home/manu/Desktop/orquestador_intercity-develop/scripts/poll_isp_connections.py", line 170, in sync_connection
+    response.raise_for_status()
+  File "/home/manu/.local/lib/python3.12/site-packages/httpx/_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '401 Unauthorized' for url 'http://localhost:8000/sync/customer'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401
+2026-01-06 10:10:32,429 INFO poll-isp :: Procesados=10 | omitidos=9
+2026-01-06 10:10:32,429 INFO poll-isp :: Modo sin cursor: no se actualiza cursor (max_ts=2026-01-06T12:52:08+00:00)
+2026-01-06 12:07:01,625 INFO poll-isp :: Consultando ISP logs desde 2026-01-05T15:07:01
+2026-01-06 12:07:02,670 INFO poll-isp :: HTTP Request: GET https://online20.ispcube.com/api/connections/connections_provisioning_logs?created_at=2026-01-05T15%3A07%3A01 "HTTP/1.1 200 OK"
+2026-01-06 12:07:05,660 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:05,663 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1272): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:07,304 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:07,309 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1273): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:08,569 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:08,575 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1274): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:09,758 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:09,762 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1275): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:10,918 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:10,923 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1276): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:12,071 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:12,078 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1277): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:13,271 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:13,276 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1280): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:14,875 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:14,879 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1281): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:15,785 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:15,788 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1282): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:16,925 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:16,928 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1283): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:18,120 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:18,125 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1284): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:19,319 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:19,321 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1285): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:20,533 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:20,539 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1287): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:21,666 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:21,679 WARNING poll-isp :: No se pudo registrar evento ISP (movement=create_connection id=1289): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:22,852 INFO poll-isp :: HTTP Request: POST http://localhost:8000/analytics/customer-events "HTTP/1.1 405 Method Not Allowed"
+2026-01-06 12:07:22,856 WARNING poll-isp :: No se pudo registrar evento ISP (movement=delete_connection id=1293): Client error '405 Method Not Allowed' for url 'http://localhost:8000/analytics/customer-events'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/405
+2026-01-06 12:07:22,857 INFO poll-isp :: Procesando conexion=11027 tipo=create_connection nombre=LESCANO MATEO
+2026-01-06 12:07:39,574 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:07:39,575 INFO poll-isp :: Sync OK connection_id=11027 :: {'geogrid_id': 18830, 'action': 'existing', 'connection_id': 11027, 'connection_code': '014918'}
+2026-01-06 12:07:39,575 INFO poll-isp :: Procesando conexion=11028 tipo=create_connection nombre=MORALES OSCAR AMADO 765
+2026-01-06 12:07:56,012 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:07:56,013 INFO poll-isp :: Sync OK connection_id=11028 :: {'geogrid_id': 18831, 'action': 'existing', 'connection_id': 11028, 'connection_code': '014866'}
+2026-01-06 12:07:56,013 INFO poll-isp :: Procesando conexion=11029 tipo=create_connection nombre=DEBIA HECTOR RAMON 325
+2026-01-06 12:08:13,516 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:08:13,516 INFO poll-isp :: Sync OK connection_id=11029 :: {'geogrid_id': 18832, 'action': 'existing', 'connection_id': 11029, 'connection_code': '014903'}
+2026-01-06 12:08:13,516 INFO poll-isp :: Procesando conexion=11030 tipo=create_connection nombre=BESSONE PIERINA PAULA 2804
+2026-01-06 12:08:29,076 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:08:29,077 INFO poll-isp :: Sync OK connection_id=11030 :: {'geogrid_id': 18824, 'action': 'existing', 'connection_id': 11030, 'connection_code': '014870'}
+2026-01-06 12:08:29,078 INFO poll-isp :: Procesando conexion=11031 tipo=create_connection nombre=MEDINA JUAN FABIO
+2026-01-06 12:08:45,551 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:08:45,553 INFO poll-isp :: Sync OK connection_id=11031 :: {'geogrid_id': 18825, 'action': 'existing', 'connection_id': 11031, 'connection_code': '014908'}
+2026-01-06 12:08:45,553 INFO poll-isp :: Procesando conexion=11032 tipo=create_connection nombre=CRIADO ANDRES ARMANDO 14
+2026-01-06 12:09:03,205 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:09:03,208 INFO poll-isp :: Sync OK connection_id=11032 :: {'geogrid_id': 18826, 'action': 'existing', 'connection_id': 11032, 'connection_code': '014917'}
+2026-01-06 12:09:03,209 INFO poll-isp :: Procesando conexion=11033 tipo=create_connection nombre=VARELA MARIO LORENZO 7653
+2026-01-06 12:09:18,897 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:09:18,900 INFO poll-isp :: Sync OK connection_id=11033 :: {'geogrid_id': 18833, 'action': 'existing', 'connection_id': 11033, 'connection_code': '014905'}
+2026-01-06 12:09:18,900 INFO poll-isp :: Procesando conexion=11034 tipo=create_connection nombre=VARELA MARIO LORENZO 7653
+2026-01-06 12:09:38,813 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:09:38,814 INFO poll-isp :: Sync OK connection_id=11034 :: {'geogrid_id': 18834, 'action': 'existing', 'connection_id': 11034, 'connection_code': '014905'}
+2026-01-06 12:09:38,814 INFO poll-isp :: Procesando conexion=11035 tipo=create_connection nombre=ANDRADA GILBERTO 73
+2026-01-06 12:10:02,734 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:10:02,735 INFO poll-isp :: Sync OK connection_id=11035 :: {'geogrid_id': 18840, 'action': 'created', 'connection_id': 11035, 'connection_code': '014868'}
+2026-01-06 12:10:02,735 INFO poll-isp :: Procesando conexion=11036 tipo=create_connection nombre=ANDRADA GILBERTO 73
+2026-01-06 12:10:19,759 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:10:19,761 INFO poll-isp :: Sync OK connection_id=11036 :: {'geogrid_id': 18841, 'action': 'created', 'connection_id': 11036, 'connection_code': '014868'}
+2026-01-06 12:10:19,762 INFO poll-isp :: Procesando conexion=11037 tipo=create_connection nombre=TORRES CARLOS B. 1125
+2026-01-06 12:10:36,950 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:10:36,951 INFO poll-isp :: Sync OK connection_id=11037 :: {'geogrid_id': 18836, 'action': 'existing', 'connection_id': 11037, 'connection_code': '014871'}
+2026-01-06 12:10:36,951 INFO poll-isp :: Procesando conexion=11038 tipo=create_connection nombre=TORRES CARLOS B. 1125
+2026-01-06 12:10:53,056 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:10:53,058 INFO poll-isp :: Sync OK connection_id=11038 :: {'geogrid_id': 18837, 'action': 'existing', 'connection_id': 11038, 'connection_code': '014871'}
+2026-01-06 12:10:53,058 INFO poll-isp :: Procesando conexion=11039 tipo=create_connection nombre=ESPINDOLA SERGIO ALFREDO 6501
+2026-01-06 12:11:12,005 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:11:12,008 INFO poll-isp :: Sync OK connection_id=11039 :: {'geogrid_id': 18838, 'action': 'existing', 'connection_id': 11039, 'connection_code': '014906'}
+2026-01-06 12:11:12,009 INFO poll-isp :: Procesando conexion=11040 tipo=create_connection nombre=PENA FRANKLIN
+2026-01-06 12:11:30,761 INFO poll-isp :: HTTP Request: POST http://localhost:8000/sync/customer "HTTP/1.1 200 OK"
+2026-01-06 12:11:30,763 INFO poll-isp :: Sync OK connection_id=11040 :: {'geogrid_id': 18839, 'action': 'existing', 'connection_id': 11040, 'connection_code': '014904'}
+2026-01-06 12:11:30,763 INFO poll-isp :: Procesados=14 | omitidos=10
+2026-01-06 12:11:30,763 INFO poll-isp :: Modo sin cursor: no se actualiza cursor (max_ts=2026-01-06T14:09:01+00:00)

@@ -35,7 +35,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Monitoreo del Orquestador\n- Ajust\u00e1 la **zona** y la **ventana de d\u00edas** con los filtros superiores.\n- Los contadores muestran acumulados filtrados por zona; las gr\u00e1ficas usan la ventana de tiempo del dashboard.\n- Revis\u00e1 la tabla de incidentes activos para priorizar y la de resueltos para validar correcciones.\n- El mapa ubica altas (verde) y bajas (rojo) usando las coordenadas validadas por el orquestador."
+      "content": "### Guia rapida\n1) **Filtros**: elegi Zona y Ventana (dias) arriba del tablero.\n2) **Prioridad diaria**: mirá primero **Incidentes abiertos**. Ahí tenes que corregir datos en ISP-Cube.\n3) **Verificacion**: usa **Incidentes resueltos** para confirmar que el cambio se aplico.\n4) **Mapa**: altas en verde y bajas en rojo con coordenadas validas.\n5) **Resumen**: los paneles de barras muestran el volumen y el tipo de problemas del periodo."
       }
     },
     {
@@ -45,6 +45,10 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "fixedColor": "#2ecc71",
+            "mode": "fixed"
+          },
           "decimals": 0,
           "displayName": "Altas",
           "mappings": [],
@@ -98,7 +102,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\",source=\"isp-log\"})",
           "interval": "",
           "legendFormat": "Altas acumuladas",
           "refId": "A"
@@ -115,6 +119,10 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "fixedColor": "#e74c3c",
+            "mode": "fixed"
+          },
           "decimals": 0,
           "displayName": "Bajas",
           "mappings": [],
@@ -168,7 +176,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\",source=\"isp-log\"})",
           "legendFormat": "Bajas acumuladas",
           "refId": "A"
         }
@@ -184,6 +192,10 @@
       },
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "fixedColor": "#3498db",
+            "mode": "fixed"
+          },
           "decimals": 0,
           "displayName": "Neto",
           "mappings": [],
@@ -237,7 +249,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\"}) - sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\",source=\"isp-log\"}) - sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\",source=\"isp-log\"})",
           "legendFormat": "Neto acumulado",
           "refId": "A"
         }
@@ -652,7 +664,8 @@
           "editorMode": "code",
           "payload": {
             "event_type": "alta",
-            "lookback_days": "$lookback_days"
+            "lookback_days": "$lookback_days",
+            "source": "isp-log"
           },
           "refId": "A",
           "target": "customer_events_map"
@@ -665,7 +678,8 @@
           "editorMode": "code",
           "payload": {
             "event_type": "baja",
-            "lookback_days": "$lookback_days"
+            "lookback_days": "$lookback_days",
+            "source": "isp-log"
           },
           "refId": "B",
           "target": "customer_events_map"
@@ -796,7 +810,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "query": "label_values(orchestrator_customer_events_total, zone)",
+        "query": "label_values(orchestrator_customer_events_total{source=\"isp-log\"}, zone)",
         "refresh": 1,
         "multi": false,
         "includeAll": true,

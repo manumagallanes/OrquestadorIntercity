@@ -33,7 +33,8 @@ DEFAULT_LOOKBACK_HOURS = 6
 DEFAULT_STATE_DIR = Path(os.getenv("ORCHESTRATOR_STATE_DIR", ".state"))
 STATE_FILE = DEFAULT_STATE_DIR / "connections_provisioning.cursor"
 DEFAULT_STATUS_FILE = DEFAULT_STATE_DIR / "connections_provisioning.status.json"
-PROCESSABLE_MOVEMENTS = {"create_connection", "ftth_change"}
+SYNC_MOVEMENTS = {"create_connection", "ftth_change"}
+EVENT_MOVEMENTS = {"create_connection", "delete_connection"}
 
 REQUIRED_ISP_VARS = [
     "ISP_BASE_URL",
@@ -152,6 +153,15 @@ def _movement_key(entry: Dict[str, Any]) -> str:
     return f"{movement_type}:{connection_id}"
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def sync_connection(
     client: httpx.Client,
     *,
@@ -183,6 +193,54 @@ def sync_connection(
     )
 
 
+def register_customer_event_from_log(
+    client: httpx.Client,
+    *,
+    orchestrator_base: str,
+    user_header: str,
+    entry: Dict[str, Any],
+) -> None:
+    movement_type = entry.get("movement_type")
+    if movement_type not in EVENT_MOVEMENTS:
+        return
+    event_type = "alta" if movement_type == "create_connection" else "baja"
+    zone = entry.get("connection_city_name") or entry.get("customer_city")
+    payload: Dict[str, Any] = {
+        "event_type": event_type,
+        "zone": zone,
+        "city": zone,
+        "lat": _safe_float(entry.get("connection_lat")),
+        "lon": _safe_float(entry.get("connection_lng")),
+        "timestamp": entry.get("created_at") or entry.get("updated_at"),
+        "source": "isp-log",
+        "metadata": {
+            "movement_id": entry.get("id"),
+            "movement_type": movement_type,
+            "connection_id": entry.get("connection_id"),
+            "connection_code": entry.get("customer_code"),
+            "customer_name": entry.get("customer_name"),
+        },
+    }
+    customer_id = entry.get("customer_id")
+    if customer_id is not None:
+        try:
+            payload["customer_id"] = int(customer_id)
+        except (TypeError, ValueError):
+            pass
+    url = f"{orchestrator_base.rstrip('/')}/analytics/customer-events"
+    headers = {"Content-Type": "application/json", user_header: "provisioning-job"}
+    try:
+        response = client.post(url, json=payload, headers=headers, timeout=15.0)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "No se pudo registrar evento ISP (movement=%s id=%s): %s",
+            movement_type,
+            entry.get("id"),
+            exc,
+        )
+
+
 def process_logs(
     logs: Iterable[Dict[str, Any]],
     *,
@@ -200,7 +258,13 @@ def process_logs(
             movement_ts = _movement_timestamp(entry)
             if movement_ts and (max_ts is None or movement_ts > max_ts):
                 max_ts = movement_ts
-            if movement_type not in PROCESSABLE_MOVEMENTS:
+            register_customer_event_from_log(
+                orch_client,
+                orchestrator_base=orchestrator_base,
+                user_header=user_header,
+                entry=entry,
+            )
+            if movement_type not in SYNC_MOVEMENTS:
                 skipped += 1
                 continue
             connection_id = entry.get("connection_id")
@@ -356,9 +420,9 @@ def main() -> None:
             processed = sum(
                 1
                 for entry in logs
-                if entry.get("movement_type") in PROCESSABLE_MOVEMENTS
-                and entry.get("connection_id") is not None
-            )
+            if entry.get("movement_type") in SYNC_MOVEMENTS
+            and entry.get("connection_id") is not None
+        )
             skipped = len(logs) - processed
         else:
             max_ts, processed, skipped = process_logs(
