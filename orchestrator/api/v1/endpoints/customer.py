@@ -6,59 +6,53 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from ...core.config import (
+from orchestrator.core.config import (
     EnvConfig,
     get_settings,
     get_runtime_state,
     RuntimeState,
     APP_USER_HEADER,
-    AUTO_GEOGRID_ATTEND,
-    connection_ctx, # context var
+    connection_ctx,
 )
-from ...core.integration import fetch_json
-from ...core.state import (
+from orchestrator.core.integration import fetch_json
+from orchestrator.core.state import (
     SYNC_COUNTER,
     PROVISION_COUNTER,
     DECOMMISSION_COUNTER,
+    AUTO_GEOGRID_ATTEND,
 )
-from ...core.audit import record_incident, resolve_incidents, record_audit
-from ...logic.domain import ( # Imports from my new domain module
+from orchestrator.core.audit import record_incident, resolve_incidents, record_audit
+from orchestrator.logic.domain import (
     ensure_customer_ready,
     ensure_customer_has_network_keys,
     ensure_alignment,
     ensure_customer_inactive,
     _connection_metadata_snapshot,
     _inject_connection_context,
-    _result_geogrid_attend_error_detail, # Wait, I didn't see this in domain.py, I saw _resolve_geogrid_error_detail in main.py
     _customer_connection_identifier,
     _customer_connection_code,
-    extract_geogrid_box_sigla, # I named it extract_geogrid_box_sigla in domain.py earlier?
+    extract_geogrid_box_sigla,
     extract_geogrid_port_number,
     _customer_coordinates_strict,
-    build_geogrid_cliente_payload, # named this build_geogrid_cliente_payload (without underscore?) I should check
-    fetch_customer_record, # I created this
+    build_geogrid_cliente_payload,
+    fetch_customer_record,
     resolve_customer_id,
     _resolve_geogrid_error_detail,
 )
-from ...logic.reporting import register_customer_event
-from ...schemas.requests import (
+from orchestrator.logic.reporting import register_customer_event
+from orchestrator.schemas.requests import (
     CustomerSyncRequest,
     ProvisionRequest,
     GeoGridAttendRequest,
     DecommissionRequest,
     AuditEntry,
 )
-from ...services import isp as isp_service
-from ...services import geogrid as geogrid_service
+from orchestrator.services import isp as isp_service
+from orchestrator.services import geogrid as geogrid_service
 
 logger = logging.getLogger("orchestrator.api.customer")
 router = APIRouter()
 
-# I need to verify function names in domain.py:
-# _build_geogrid_cliente_payload -> build_geogrid_cliente_payload (I removed underscore in domain.py snippet? I should check)
-# _resolved_customer_id -> resolve_customer_id
-# _extract_geogrid_box_sigla -> extract_geogrid_box_sigla
-# _extract_geogrid_port_number -> extract_geogrid_port_number
 
 @router.post(
     "/sync/customer",

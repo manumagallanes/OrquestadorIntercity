@@ -4,6 +4,14 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from orchestrator.core.state import (
+    DB_PATH,
+    CUSTOMER_EVENT_RETENTION_DAYS_CFG,
+    INCIDENT_RETENTION_DAYS_CFG,
+    AUDIT_RETENTION_DAYS_CFG,
+    RECONCILIATION_RETENTION_DAYS_CFG,
+)
+
 
 class PersistenceStore:
     def __init__(
@@ -361,3 +369,13 @@ class PersistenceStore:
             else:
                 data[key] = value
         return data
+
+
+# Global singleton instance
+persistence_store = PersistenceStore(
+    db_path=DB_PATH,
+    customer_event_retention_days=CUSTOMER_EVENT_RETENTION_DAYS_CFG,
+    incident_retention_days=INCIDENT_RETENTION_DAYS_CFG,
+    audit_retention_days=AUDIT_RETENTION_DAYS_CFG,
+    reconciliation_retention_days=RECONCILIATION_RETENTION_DAYS_CFG,
+)

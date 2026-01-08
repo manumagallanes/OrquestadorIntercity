@@ -28,7 +28,7 @@ from .logic.seed import ensure_customer_seed
 # Checking Step 11 for config.py...
 # Yes, "Logging Setup" was mentioned.
 
-setup_logging(os.getenv("LOG_LEVEL", "INFO"))
+setup_logging()
 logger = logging.getLogger("orchestrator.main")
 
 app = FastAPI(

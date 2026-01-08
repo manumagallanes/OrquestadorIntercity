@@ -11,23 +11,14 @@ from ..core.state import (
 )
 from ..core.utils import parse_iso8601, resolve_zone_coordinates
 from .domain import (
-    _connections_metadata_snapshot, # Wait, I named it _connection_metadata_snapshot in domain.py (singular)
+    _connection_metadata_snapshot,
     _customer_coordinates,
+    _customer_zone,
+    _customer_city,
 )
-
-# Correction: I need to verify key name in domain.py. It was _connection_metadata_snapshot.
-# Also need _customer_zone from domain.py? Or re-implement?
-# It's better to import from domain.py if possible.
 
 logger = logging.getLogger("orchestrator.logic.reporting")
 
-def _connection_metadata_snapshot(customer: Dict[str, Any], **kwargs) -> Dict[str, Any]:
-    from .domain import _connection_metadata_snapshot
-    return _connection_metadata_snapshot(customer, **kwargs)
-
-def _customer_coordinates(customer: Dict[str, Any]) -> Tuple[float, float]:
-    from .domain import _customer_coordinates
-    return _customer_coordinates(customer)
 
 def register_customer_event(
     event_type: str,
@@ -49,8 +40,6 @@ def register_customer_event(
     # Try to resolve zone/coords from customer if not provided
     if customer:
         if zone is None:
-            # Import _customer_zone from domain or reimplement
-            from .domain import _customer_zone
             zone = _customer_zone(customer)
         if lat is None or lon is None:
             try:
@@ -62,7 +51,6 @@ def register_customer_event(
             except ValueError:
                 pass
         if city is None:
-            from .domain import _customer_city
             city = _customer_city(customer)
 
     event_id = f"{int(datetime.now().timestamp() * 1000)}-{cid or 'unknown'}"

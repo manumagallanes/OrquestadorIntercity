@@ -2,7 +2,9 @@ services:
   orchestrator:
     build: .
     env_file:
-      - .env
+      - ../.env
+    ports:
+      - "8000:8000"
     command:
       - uvicorn
       - orchestrator.main:app
@@ -10,6 +12,25 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+
+  scheduler:
+    build: .
+    env_file:
+      - ../.env
+    environment:
+      - ORCHESTRATOR_BASE_URL=http://orchestrator:8000
+      - POLL_INTERVAL=600 # 10 minutos
+      - RETRY_INTERVAL=1800 # 30 minutos
+      - REFRESH_INTERVAL=21600 # 6 horas
+    volumes:
+      - scheduler-state:/app/.state
+    command:
+      - bash
+      - /app/scripts/scheduler.sh
+    depends_on:
+      - orchestrator
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v2.53.0
     command:
@@ -55,3 +76,4 @@ services:
 
 volumes:
   grafana-data:
+  scheduler-state:

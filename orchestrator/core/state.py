@@ -1,10 +1,14 @@
+import logging
 import os
 from collections import OrderedDict, deque
-from typing import Any, Dict, List, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 from prometheus_client import Counter, Gauge, Histogram
 
-from .config import SETTINGS
+from .config import SETTINGS, connection_ctx
+
+logger = logging.getLogger("orchestrator.core.state")
 
 # Constants
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -21,6 +25,21 @@ AUTO_GEOGRID_ATTEND = (
     os.getenv("ORCHESTRATOR_GEOGRID_AUTO_ATTEND", "false").strip().lower()
     in TRUE_VALUES
 )
+
+# Estados de cliente permitidos para automatización
+ALLOWED_CUSTOMER_STATUS = {"active", "activo", "enabled", "habilitado"}
+
+# Timestamp mínimo de activación para automatización (None = sin restricción)
+_automation_cutoff_env = os.getenv("ORCHESTRATOR_AUTOMATION_CUTOFF")
+AUTOMATION_MIN_START_TS: Optional[datetime] = None
+if _automation_cutoff_env:
+    try:
+        AUTOMATION_MIN_START_TS = datetime.fromisoformat(_automation_cutoff_env.replace("Z", "+00:00"))
+    except ValueError:
+        logger.warning("ORCHESTRATOR_AUTOMATION_CUTOFF inválido: %s", _automation_cutoff_env)
+
+# Campos de red requeridos para decommission
+NETWORK_KEYS: List[str] = ["olt_id", "board", "pon"]
 
 CORE_CUSTOMER_FIELDS: List[str] = [
     "lat",

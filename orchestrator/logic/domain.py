@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 
 from fastapi import HTTPException, status
 
-from ..core.config import EnvConfig
+from ..core.config import EnvConfig, connection_ctx
 from ..core.integration import fetch_json
 from ..core.state import (
     ALLOWED_CUSTOMER_STATUS,
@@ -20,14 +20,25 @@ from ..core.state import (
     NETWORK_KEYS,
     DEFAULT_ZONE_LABEL,
     DEFAULT_COORDINATE_FALLBACK,
-    connection_ctx,
 )
 from ..core.audit import record_incident
 from ..schemas.requests import ProvisionRequest
-from ..services import isp as isp_service # We need to ensure we can import this.
-# Assuming orchestrator/services/isp.py exists.
+from ..services import isp as isp_service
 
 logger = logging.getLogger("orchestrator.logic.domain")
+
+
+def _resolve_geogrid_error_detail(exc: HTTPException) -> Optional[Dict[str, Any]]:
+    """
+    Extrae detalles de error de GeoGrid para logging.
+    Retorna None si el error no es un error de gateway/servicio transitorio.
+    """
+    if exc.status_code in {502, 503, 504}:
+        if isinstance(exc.detail, dict):
+            return exc.detail
+        return {"message": str(exc.detail)}
+    return None
+
 
 def _is_blank(value: Any) -> bool:
     if value is None:
@@ -161,7 +172,7 @@ def ensure_customer_ready(
                 metadata["connection_id"] = str(connection_context["connection_id"])
             if connection_context.get("connection_code"):
                 metadata["connection_code"] = connection_context["connection_code"]
-        record_incident_fn(
+        record_incident(
             "automation_not_allowed",
             {
                 "customer_id": customer_id,
@@ -269,7 +280,12 @@ def ensure_customer_ready(
         for field in OPTIONAL_NETWORK_FIELDS
         if _is_blank(customer.get(field))
     ]
-    if network_missing:
+    # Flexibilizacion: Si tenemos ftthbox y ftth_port validos, permitimos continuar
+    # aunque falten datos de OLT (olt_id, board, pon).
+    has_valid_box = isinstance(customer.get("ftthbox"), dict) and customer.get("ftthbox", {}).get("id")
+    has_valid_port = isinstance(customer.get("ftth_port"), dict) and customer.get("ftth_port", {}).get("id")
+    
+    if network_missing and not (has_valid_box and has_valid_port):
         connection_id_hint = customer.get("connection_id_hint") or customer.get("connection_id")
         connection_code_hint = customer.get("connection_code_hint") or customer.get("connection_code")
         metadata = _connection_metadata_snapshot(
@@ -303,6 +319,14 @@ def ensure_customer_ready(
     lon_raw = customer.get("lon")
     if lon_raw is None:
         lon_raw = customer.get("lng")
+    
+    # Try looking into ftthbox if main coords are missing
+    if (lat_raw in (None, "", []) or lon_raw in (None, "", [])) and isinstance(customer.get("ftthbox"), dict):
+        box_data = customer.get("ftthbox")
+        if box_data.get("lat") and (box_data.get("lng") or box_data.get("lon")):
+             lat_raw = box_data.get("lat")
+             lon_raw = box_data.get("lng") or box_data.get("lon")
+             
     coord_missing = lat_raw in (None, "", []) or lon_raw in (None, "", [])
 
     if not (ALLOW_COORDINATE_FALLBACK and coord_missing):
@@ -409,7 +433,7 @@ def ensure_alignment(customer: Dict[str, Any], payload: ProvisionRequest) -> Non
         }
 
     if mismatches:
-        record_incident_fn(
+        record_incident(
             "hardware_mismatch",
             {
                 "customer_id": customer.get("customer_id"),
@@ -620,7 +644,7 @@ def _customer_activation_timestamp(customer: Dict[str, Any]) -> Optional[datetim
 def ensure_customer_inactive(customer: Dict[str, Any]) -> None:
     if customer.get("status") == "inactive":
         return
-    record_incident_fn(
+    record_incident(
         "decommission_status_active",
         {
             "customer_id": customer.get("customer_id"),
@@ -708,6 +732,16 @@ def _propagate_connection_fields(customer: Dict[str, Any], connection: Dict[str,
         "ip",
         "ipv6",
         "local_ip",
+        # Technical network fields
+        "olt_id",
+        "board",
+        "pon",
+        "onu_sn",
+        # Full objects
+        "ftthbox",
+        "ftth_port",
+        "node",
+        "plan"
     ):
         if customer.get(field) in (None, "", []):
             value = connection.get(field)

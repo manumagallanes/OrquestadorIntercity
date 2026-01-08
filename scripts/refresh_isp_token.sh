@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE="${1:-.env}"
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "[ERROR] No existe el archivo $ENV_FILE" >&2
+# Buscar .env en múltiples ubicaciones
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+if [[ -n "${1:-}" && -f "$1" ]]; then
+  ENV_FILE="$1"
+elif [[ -f ".env" ]]; then
+  ENV_FILE=".env"
+elif [[ -f "../.env" ]]; then
+  ENV_FILE="../.env"
+elif [[ -f "$PROJECT_ROOT/../.env" ]]; then
+  ENV_FILE="$PROJECT_ROOT/../.env"
+else
+  echo "[ERROR] No se encontró archivo .env" >&2
+  echo "Buscado en: .env, ../.env, $PROJECT_ROOT/../.env" >&2
   exit 1
 fi
+
+echo "[INFO] Usando archivo: $ENV_FILE"
 
 set -a
 . "$ENV_FILE"

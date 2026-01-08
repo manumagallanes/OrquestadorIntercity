@@ -11,7 +11,6 @@ from .state import (
     INCIDENT_LOG,
     RESOLVED_INCIDENT_BUFFER_SIZE,
     RESOLVED_INCIDENT_LOG,
-    RuntimeState,
 )
 from ..schemas.requests import AuditEntry
 
