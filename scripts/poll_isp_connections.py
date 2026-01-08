@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 
 UTC = timezone.utc
+# ISP Cube usa hora local de Argentina (UTC-3) para los timestamps
+ARGENTINA_TZ = timezone(timedelta(hours=-3))
 DEFAULT_LOOKBACK_HOURS = 6
 DEFAULT_STATE_DIR = Path(os.getenv("ORCHESTRATOR_STATE_DIR", ".state"))
 STATE_FILE = DEFAULT_STATE_DIR / "connections_provisioning.cursor"
@@ -65,7 +67,8 @@ def _parse_iso(value: str) -> datetime:
 
 
 def _format_param_timestamp(dt: datetime) -> str:
-    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    # ISP Cube espera timestamps en hora Argentina (UTC-3), no UTC
+    return dt.astimezone(ARGENTINA_TZ).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def load_cursor() -> Optional[datetime]:

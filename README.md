@@ -1,251 +1,125 @@
-# Orquestador Intercity – Documentación Técnica
+# Orquestador Intercity – Ingeniería en Telecomunicaciones
 
-Este repositorio contiene el orquestador que integra **ISP‑Cube** (catálogo de clientes y altas) con **GeoGrid** (plataforma geoespacial). El objetivo es **automatizar** la creación/actualización de clientes y el **tendido lógico** (drop) a partir de las altas, con validaciones, auditoría y monitoreo.
+**Trabajo Final de Prácticas Profesionales**
 
-El documento está orientado a un **trabajo final de prácticas profesionales**, con foco en claridad, reproducibilidad y criterios técnicos verificables.
-
----
-
-## 1. Alcance y objetivos
-
-**Alcance principal**
-- Detectar movimientos en ISP‑Cube (altas, cambios de FTTH) y sincronizarlos con GeoGrid.
-- Validar datos críticos (coordenadas, caja, puerto, etc.).
-- Registrar auditorías e incidentes y exponer métricas para observabilidad.
-
-**Objetivo operativo**
-- Que una alta en ISP‑Cube se traduzca automáticamente en:
-  1) Cliente en GeoGrid.
-  2) Casita (ponto de acesso) con coordenadas.
-  3) Asignación del drop al puerto correcto.
-
-**No objetivo**
-- Inventariar la red en GeoGrid ni corregir datos históricos de ISP‑Cube. El orquestador **consume** esos datos, no los genera.
+Este repositorio alberga el código fuente y la documentación técnica del **Orquestador Intercity**, un middleware desarrollado para la automatización de procesos de aprovisionamiento y sincronización de red. El sistema actúa como puente lógico entre el Business Support System (BSS) **ISP-Cube** y el sistema de gestión geoespacial (GIS/OSS) **GeoGrid**.
 
 ---
 
-## 2. Arquitectura
+## 1. Resumen Ejecutivo
 
-**Servicios (Docker Compose)**
-| Servicio         | Puerto | Rol |
-|------------------|:------:|-----|
-| `orchestrator`   | 8000   | API FastAPI, reglas de negocio, métricas y auditoría |
-| `isp-mock`       | 8001   | Mock de ISP‑Cube (entorno de laboratorio) |
-| `geogrid-mock`   | 8002   | Mock de GeoGrid (entorno de laboratorio) |
-| `prometheus`     | 9090   | Métricas del orquestador |
-| `grafana`        | 3000   | Paneles de monitoreo |
-| `ui`             | 8501   | Interfaz Streamlit para pruebas |
+El objetivo principal de este proyecto es reducir la carga operativa manual y minimizar errores en la gestión de altas y bajas de clientes FTTH. Para ello, el orquestador implementa una arquitectura orientada a eventos (poll-based) que detecta cambios en el sistema comercial y refleja automáticamente estos cambios en el inventario de red.
 
-**Diagrama**
-- Archivo: `diagrama.mmd` (Mermaid)
-- Flujo conceptual: ISP‑Cube → Orquestador → GeoGrid
+**Funcionalidades Clave:**
+*   **Sincronización Automática:** Propagación de altas, bajas y modificaciones desde ISP-Cube hacia GeoGrid.
+*   **Aprovisionamiento Lógico:** Asignación automática de recursos de red (puertos PON) y documentación de la acometida (Drop) georreferenciada.
+*   **Validación de Datos:** Reglas de negocio estrictas para asegurar la integridad de la información (coordenadas, caja, puerto).
+*   **Observabilidad:** Sistema integrado de métricas (Prometheus) y visualización (Grafana) para el monitoreo de la salud del servicio y KPIs operativos.
 
 ---
 
-## 3. Flujo funcional (alto nivel)
+## 2. Arquitectura del Sistema
 
-1) **ISP‑Cube** registra una alta o un cambio en FTTH.
-2) El **poller** consulta `connections_provisioning_logs`.
-3) El **orquestador** valida datos y sincroniza con GeoGrid.
-4) Se crea/actualiza cliente, casita y drop.
-5) Se registran **auditorías**, **incidentes** y **métricas**.
+El proyecto ha evolucionado desde un script monolítico hacia una **arquitectura modular y escalable**, diseñada siguiendo principios de ingeniería de software robustos.
 
-**Nota crítica:**
-El cron **solo procesa movimientos que ISP‑Cube emite en `connections_provisioning_logs`**. Si no hay movimiento, no hay sincronización automática.
+### 2.1 Estructura Modular
+El código se organiza en capas lógicas para facilitar el mantenimiento y la extensibilidad:
 
----
+*   **`orchestrator.core`**: Infraestructura base. Manejo de configuración, estado global, logging y clientes HTTP resilientes (con patrones de Retry y Circuit Breaker).
+*   **`orchestrator.logic`**: Lógica de negocio pura. Contiene las reglas de validación de clientes, resolución de coordenadas, lógica de reconciliación y reportes.
+*   **`orchestrator.services`**: Capa de abstracción para comunicaciones externas. Módulos dedicados para interactuar con las APIs de ISP-Cube y GeoGrid.
+*   **`orchestrator.api`**: Controladores REST (FastAPI). Expone endpoints para operaciones síncronas, consultas de métricas y hooks de gestión.
+*   **`orchestrator.schemas`**: Definiciones de datos (Pydantic) para garantizar contratos de interfaz estrictos.
 
-## 4. Requisitos de datos (ISP‑Cube)
+### 2.2 Componentes de Despliegue
+La solución se despliega mediante **Docker Compose**, orquestando los siguientes contenedores:
 
-Para que el flujo sea automático y sin errores, la conexión debe tener:
-- **Lat/Lon** válidos (dentro del rango permitido).
-- **Caja FTTH** (sigla/nombre coincide con GeoGrid).
-- **Puerto FTTH** (número de puerto).
-
-Campos usuales en ISP‑Cube:
-- `connection_ftth_box` (ej. `CAJA_MANUEL1`)
-- `connection_ftth_port` (número de puerto)
-- `connection_lat`, `connection_lng`
-
-Si faltan, el orquestador genera incidentes y **no puede crear el drop correctamente**.
+| Servicio | Rol | Descripción |
+| :--- | :--- | :--- |
+| **`orchestrator`** | Núcleo | Aplicación FastAPI (Python) que ejecuta la lógica de negocio. |
+| **`prometheus`** | Monitoreo | Recolector de series temporales para métricas de rendimiento y negocio. |
+| **`grafana`**  | Visualización | Dashboards para la visualización de incidentes, tasas de sincronización y estado del sistema. |
+| **`ui`**      | Interfaz | Herramienta auxiliar (Streamlit) para pruebas manuales y consultas rápidas. |
 
 ---
 
-## 5. GeoGrid: integración recomendada
+## 3. Flujo de Información
 
-La integración sigue el flujo sugerido por GeoGrid:
-1) **Crear cliente** (`/clientes`) con `codigoIntegracao`.
-2) **Obtener idCliente** (`/clientes/integrado/{codigoIntegracao}`).
-3) **Atender** (`/integracao/atender`) con:
-   - `idPorta` (puerto en la caja/CTO)
-   - `idCliente`
-   - `local` con coordenadas y `idItemRedeCliente`
-   - `idCaboTipo` opcional (Drop) y `pontos`.
+El sistema opera bajo un modelo de **consumidor inteligente**:
 
-**`codigoIntegracao`**
-- Se usa el **connection_id** de ISP‑Cube. Eso evita conflictos y permite trazabilidad.
+1.  **Detección:** Un proceso de sondeo (*polling*) consulta periódicamente los logs de aprovisionamiento de ISP-Cube.
+2.  **Procesamiento:** El orquestador recibe la novedad (alta/baja) y aplica validaciones:
+    *   ¿El cliente tiene coordenadas válidas?
+    *   ¿La caja y puerto asignados existen en el inventario?
+3.  **Ejecución:**
+    *   **En GeoGrid:** Se crea/actualiza el cliente, se genera la "casita" (punto de acceso) y se documenta el cable de bajada (Drop) conectado al puerto específico.
+4.  **Auditoría:** Cada acción genera un registro de auditoría. Si ocurre un error (ej. datos inconsistentes), se registra un **Incidente** para su corrección manual posterior.
 
-**Comentario del drop**
-- Se escribe un comentario en la porta con formato:
-  - `Drop - NOMBRE CLIENTE`
-  - Si se repite, se agrega sufijo: `Drop - NOMBRE CLIENTE 2`, etc.
+> **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
 
 ---
 
-## 6. Configuración
+## 4. Requisitos Previos
 
-### 6.1 Archivos de entorno
-`config/environments/*.json` definen:
-- URL base por servicio
-- Timeouts
-- Reintentos
-- Circuit breakers
+Para ejecutar este proyecto en un entorno local o productivo, se requiere:
 
-### 6.2 Variables principales
-- `ORCHESTRATOR_ENV` (ej. `dev`)
-- `ISP_BASE_URL`, `ISP_API_KEY`, `ISP_CLIENT_ID`, `ISP_USERNAME`, `ISP_BEARER`
-- `GEOGRID_BASE_URL`, `GEOGRID_BEARER`
-- `GEOGRID_PASTA_ID`
-- `GEOGRID_CABO_TIPO_NAME` (ej. `Drop Acometidas`) o `GEOGRID_CABO_TIPO_ID`
-- `ORCHESTRATOR_GEOGRID_AUTO_ATTEND=true`
-- `ORCHESTRATOR_ALLOW_COORDINATE_FALLBACK=true/false`
-- `ORCHESTRATOR_ALLOW_MISSING_NETWORK_KEYS=true/false`
-- `ORCHESTRATOR_MIN_START_DATE=YYYY-MM-DD`
+*   **Docker & Docker Compose**: Para la contenerización de los servicios.
+*   **Acceso a APIs**: Credenciales válidas para ISP-Cube (Token/Usuario) y GeoGrid (API Key).
+*   **Python 3.10+** (Opcional, solo para desarrollo/tests locales fuera de Docker).
 
 ---
 
-## 7. Puesta en marcha
+## 5. Instalación y Puesta en Marcha
+
+### 5.1 Configuración de Entorno
+1.  Clonar el repositorio.
+2.  Crear un archivo `.env` basado en `.env.example`.
+3.  Configurar las URLs y credenciales de los servicios externos en `config/environments/dev.json` (o el entorno correspondiente).
+
+**Importante:** La versión actual **no utiliza mocks**. Requiere conexión real a los servicios o configuración adecuada de stubs externos si se desea simular tráfico.
+
+### 5.2 Ejecución
+Iniciar todos los servicios:
 
 ```bash
-docker compose up --build
+docker-compose up --build -d
 ```
 
-Accesos:
-- API: http://localhost:8000/docs
-- Grafana: http://localhost:3000 (admin/admin)
-- Prometheus: http://localhost:9090
-- UI: http://localhost:8501
+### 5.3 Verificación
+*   **API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+*   **Estado de Salud:** [http://localhost:8000/health](http://localhost:8000/health)
+*   **Dashboards:** [http://localhost:3000](http://localhost:3000) (Credenciales: admin/admin)
 
 ---
 
-## 8. Poller ISP → Orquestador
+## 6. Pruebas Automatizadas
 
-Script: `scripts/poll_isp_connections.py`
+Como parte de la ingeniería de calidad del software, se ha incluido una suite de pruebas automatizadas (unitarias e integración) que validan la lógica de dominio y la integridad de los endpoints.
 
-Ejemplos:
+Para ejecutar las pruebas:
+
 ```bash
-# Primera corrida o recuperación
-rm -f .state/connections_provisioning.cursor
-./scripts/poll_isp_connections.py --lookback-hours 24
+# Instalar dependencias de prueba
+pip install -r requirements.txt
 
-# Ventana acotada
-./scripts/poll_isp_connections.py --since "2026-01-05T16:45:00Z"
-```
-
-**Cron actual (15 min):**
-```
-*/15 * * * * cd /home/manu/Desktop/orquestador_intercity-develop && ./scripts/poll_isp_connections.py --lookback-hours 6 >> logs/poll_job.log 2>&1
-```
-
-**Reconcilación (sin cursor):**
-Script: `scripts/replay_provisioning.py`  
-Reprocesa los movimientos del día (o una ventana) sin tocar el cursor principal.
-
-Ejemplos:
-```bash
-./scripts/replay_provisioning.py
-./scripts/replay_provisioning.py --lookback-hours 24
-```
-
-**Cron recomendado (cada 2 h):**
-```
-7 */2 * * * cd /home/manu/Desktop/orquestador_intercity-develop && ./scripts/replay_provisioning.py --lookback-hours 24 >> logs/replay_provisioning.log 2>&1
+# Ejecutar suite de pruebas con pytest
+python -m pytest tests
 ```
 
 ---
 
-## 9. Reintentos automáticos de incidentes
+## 7. Scripts de Mantenimiento
 
-Para cubrir cambios que **no generan logs**, se agregó un reintento periódico:
+Se incluyen scripts en `scripts/` para tareas operativas recurrentes:
 
-```
-5 */2 * * * cd /home/manu/Desktop/orquestador_intercity-develop && ./scripts/retry_incidents.py --lookback-hours 24 >> logs/retry_incidents.log 2>&1
-```
-
-Esto re‑ejecuta `/sync/customer` para incidentes recientes (últimas 24h).
+*   `poll_isp_connections.py`: Ejecución manual o programada (Cron) del ciclo de detección de cambios.
+*   `replay_provisioning.py`: Herramienta para reprocesar eventos pasados (reconciliación) sin afectar el cursor principal.
+*   `retry_incidents.py`: Reintento automático de sincronizaciones fallidas por errores transitorios.
 
 ---
 
-## 10. Monitoreo y alertas
+## 8. Licencia y Autoría
 
-Prometheus consume `/metrics` del orquestador.
+Este proyecto forma parte de las prácticas profesionales de **Manuel Magallanes** para la carrera de Ingeniería en Telecomunicaciones.
 
-**Alertas configuradas** (archivo `monitoring/alerts.yml`):
-- Incidentes abiertos
-- Errores GeoGrid
-- Errores de sync
-- Pending en sync
-- Faltantes de caja/puerto
-- Coordenadas inválidas
-- Campos obligatorios faltantes
-
-**Métricas clave**
-- `orchestrator_customer_sync_total`
-- `orchestrator_incidents_total`
-- `orchestrator_integration_errors_total`
-- `orchestrator_request_latency_seconds`
-
----
-
-## 11. Procedimiento de prueba (entorno real)
-
-1) Preparar caja y puertos en GeoGrid.
-2) En ISP‑Cube crear la conexión con:
-   - Caja FTTH y puerto
-   - Lat/Lon correctos
-3) Esperar al cron (15 min) o forzar el poller.
-4) Verificar en GeoGrid: casita + drop + comentario.
-5) Revisar Grafana (syncs, incidentes).
-
----
-
-## 12. Troubleshooting rápido
-
-**No aparece nada en GeoGrid**
-- Verificar si hay movimiento en `connections_provisioning_logs`.
-- Confirmar `ftth_port_id` y `ftth_port.nro` en ISP‑Cube.
-
-**401 en ISP‑Cube**
-- Renovar bearer con `scripts/refresh_isp_token.sh`.
-
-**GeoGrid responde `erro de conexão`**
-- Revisar Token Google en GeoGrid y facturación.
-
-**Conflictos de porta**
-- Verificar puerto disponible o `geogrid_assignment_conflict`.
-
----
-
-## 13. Scripts útiles
-
-- `scripts/poll_isp_connections.py` → poller ISP → orquestador
-- `scripts/retry_incidents.py` → reintento de incidentes
-- `scripts/replay_provisioning.py` → reconciliación sin mover cursor
-- `scripts/recomment_drop.py` → reescribe comentario del drop (opcional)
-
----
-
-## 14. Estado del proyecto (criterios de éxito)
-
-El sistema está listo para pruebas controladas cuando:
-- ISP‑Cube emite correctamente los movimientos.
-- GeoGrid tiene infraestructura base (cajas/puertos).
-- El orquestador procesa sin incidentes críticos.
-
-En producción, la calidad de datos es el factor más determinante.
-
----
-
-## 15. Licencia
-
-Ver `LICENSE`.
+**Licencia:** Ver archivo `LICENSE`.

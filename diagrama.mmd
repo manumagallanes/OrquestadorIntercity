@@ -43,26 +43,18 @@ flowchart LR
     end
 
     %% ===== Flujos principales =====
+    %% ===== Flujos principales =====
     Operador -->|"Operaciones comerciales / tickets"| ISP
     Operador -.->|"Usa UI del orquestador (QA)"| UI
     UI -.->|"Formularios sync / provision / baja"| Orchestrator
-    UI -.->|"Gestión demo (POST/PATCH)"| ISPMock
 
     ISP -->|"GET /customers, etc."| Orchestrator
     Orchestrator -->|"Sincronización GeoGrid\n POST/PUT /clientes"| GeoGrid
     Orchestrator -->|"Asignación de puerto\n POST /integracao/atender"| GeoGrid
     Orchestrator -->|"Baja técnica\n DELETE /integracao/atender/{puerto}"| GeoGrid
 
-    DecisionQA{{¿Config QA?}}:::decision
-    Orchestrator --> DecisionQA
-    LocalSwitch(("Mocks locales")):::mock
-    ProdSwitch(("Servicios productivos")):::system
-    DecisionQA -->|"Sí"| LocalSwitch
-    DecisionQA -->|"No"| ProdSwitch
-    LocalSwitch --> ISPMock
-    LocalSwitch --> GeoMock
-    ProdSwitch --> ISP
-    ProdSwitch --> GeoGrid
+    Orchestrator --> ISP
+    Orchestrator --> GeoGrid
 
     %% ===== Observabilidad =====
     Orchestrator -->|"Métricas (/metrics)"| Prom

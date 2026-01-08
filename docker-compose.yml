@@ -10,36 +10,6 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
-    depends_on:
-      - isp-mock
-      - geogrid-mock
-    ports:
-      - "8000:8000"
-
-  isp-mock:
-    build: .
-    command:
-      - uvicorn
-      - mocks.isp_cube.main:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8001"
-    ports:
-      - "8001:8001"
-
-  geogrid-mock:
-    build: .
-    command:
-      - uvicorn
-      - mocks.geogrid.main:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8002"
-    ports:
-      - "8002:8002"
-
   prometheus:
     image: prom/prometheus:v2.53.0
     command:

@@ -18,10 +18,13 @@ from pathlib import Path
 
 
 UTC = timezone.utc
+# ISP Cube usa hora local de Argentina (UTC-3) para los timestamps
+ARGENTINA_TZ = timezone(timedelta(hours=-3))
 
 
 def _format_iso(dt: datetime) -> str:
-    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # ISP Cube espera timestamps en hora Argentina (UTC-3), no UTC
+    return dt.astimezone(ARGENTINA_TZ).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _start_of_day(dt: datetime) -> datetime:

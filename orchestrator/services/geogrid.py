@@ -262,55 +262,55 @@ async def resolve_port_id_by_sigla_and_number(
             return value.strip().lower() in {"true", "t", "1", "s", "yes"}
         return False
 
-        porta_str = str(porta_num)
-        candidates = []
-        for entry in registros:
-            if not isinstance(entry, dict):
-                continue
-            dados = entry.get("dados") if isinstance(entry, dict) else None
-            if not isinstance(dados, dict):
-                continue
-            if str(dados.get("porta")) != porta_str:
-                continue
-            equipamento = entry.get("equipamento") if isinstance(entry, dict) else None
-            equip = equipamento if isinstance(equipamento, dict) else {}
-            candidates.append(
-                {
-                    "id": dados.get("id"),
-                    "available": _is_available(entry.get("disponivel")),
-                    "tipo": _norm_flag(dados.get("tipo")),
-                    "atendimento": _norm_flag(equip.get("atendimento")),
-                    "sigla": equip.get("sigla"),
-                }
-            )
+    porta_str = str(porta_num)
+    candidates = []
+    for entry in registros:
+        if not isinstance(entry, dict):
+            continue
+        dados = entry.get("dados") if isinstance(entry, dict) else None
+        if not isinstance(dados, dict):
+            continue
+        if str(dados.get("porta")) != porta_str:
+            continue
+        equipamento = entry.get("equipamento") if isinstance(entry, dict) else None
+        equip = equipamento if isinstance(equipamento, dict) else {}
+        candidates.append(
+            {
+                "id": dados.get("id"),
+                "available": _is_available(entry.get("disponivel")),
+                "tipo": _norm_flag(dados.get("tipo")),
+                "atendimento": _norm_flag(equip.get("atendimento")),
+                "sigla": equip.get("sigla"),
+            }
+        )
 
-        if not candidates:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"message": "No se encontró la porta en la caja", "sigla": sigla_caja, "porta": porta_num},
-            )
+    if not candidates:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "No se encontró la porta en la caja", "sigla": sigla_caja, "porta": porta_num},
+        )
 
-        available = [c for c in candidates if c["available"]]
-        selection_pool = available if available else (candidates if allow_unavailable else [])
-        if selection_pool:
-            preferred = [
-                c
-                for c in selection_pool
-                if c["tipo"] == "S" and c["atendimento"] == "S"
-            ]
-            if preferred:
-                if len(preferred) > 1:
-                    logger.warning(
-                        "Múltiples portas candidatas para sigla=%s porta=%s :: %s",
-                        sigla_caja,
-                        porta_num,
-                        [p.get("sigla") for p in preferred],
-                    )
-                return int(preferred[0]["id"])
-            preferred = [c for c in selection_pool if c["tipo"] == "S"]
-            if preferred:
-                return int(preferred[0]["id"])
-            return int(selection_pool[0]["id"])
+    available = [c for c in candidates if c["available"]]
+    selection_pool = available if available else (candidates if allow_unavailable else [])
+    if selection_pool:
+        preferred = [
+            c
+            for c in selection_pool
+            if c["tipo"] == "S" and c["atendimento"] == "S"
+        ]
+        if preferred:
+            if len(preferred) > 1:
+                logger.warning(
+                    "Múltiples portas candidatas para sigla=%s porta=%s :: %s",
+                    sigla_caja,
+                    porta_num,
+                    [p.get("sigla") for p in preferred],
+                )
+            return int(preferred[0]["id"])
+        preferred = [c for c in selection_pool if c["tipo"] == "S"]
+        if preferred:
+            return int(preferred[0]["id"])
+        return int(selection_pool[0]["id"])
 
     if not available:
         raise HTTPException(
