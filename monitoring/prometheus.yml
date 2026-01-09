@@ -9,4 +9,4 @@ scrape_configs:
       - targets:
           - orchestrator:8000
 rule_files:
-  - alerts.yml
+  - /etc/prometheus/alerts.yml

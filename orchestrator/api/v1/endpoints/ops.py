@@ -78,7 +78,88 @@ async def update_config(
         "current": {"dry_run": state.dry_run},
     }
 
-# Postponing `reset` implementation until I locate `_ensure_customer_seed`. 
-# Or I can just omit it for now and add it to `ops.py` later.
-# Users heavily rely on `reset` during development.
-# I'll search for `_ensure_customer_seed` in main.py.
+
+@router.post(
+    "/ops/refresh-isp-token",
+    summary="Refresh ISP-Cube bearer token",
+)
+async def refresh_isp_token(
+    settings: EnvConfig = Depends(get_settings),
+) -> Dict[str, Any]:
+    """
+    Solicita un nuevo token a ISP-Cube y lo actualiza en memoria.
+    No requiere reiniciar el contenedor.
+    """
+    isp_base_url = os.getenv("ISP_BASE_URL", "").rstrip("/")
+    api_key = os.getenv("ISP_API_KEY", "")
+    client_id = os.getenv("ISP_CLIENT_ID", "")
+    username = os.getenv("ISP_USERNAME", "")
+    password = os.getenv("ISP_PASSWORD", "")
+
+    if not all([isp_base_url, api_key, client_id, username, password]):
+        return {
+            "status": "error",
+            "message": "Missing ISP credentials in environment variables",
+        }
+
+    token_url = f"{isp_base_url}/sanctum/token"
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                token_url,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "api-key": api_key,
+                    "client-id": client_id,
+                    "login-type": "api",
+                },
+                json={
+                    "username": username,
+                    "password": password,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            new_token = data.get("token")
+            
+            if not new_token:
+                return {
+                    "status": "error",
+                    "message": "Response did not contain a token",
+                    "response": data,
+                }
+
+        # Update the token in environment (for this process)
+        new_bearer = f"Bearer {new_token}"
+        os.environ["ISP_BEARER"] = new_bearer
+
+        # Update in settings (reload headers)
+        isp_service = settings.services.get("isp")
+        if isp_service:
+            region = isp_service.regions.get(isp_service.default_region)
+            if region:
+                region.default_headers["Authorization"] = new_bearer
+
+        logger.info("ISP token refreshed successfully")
+        return {
+            "status": "success",
+            "message": "Token refreshed and updated in memory",
+        }
+
+    except httpx.HTTPStatusError as e:
+        logger.error("Failed to refresh ISP token: %s", e)
+        return {
+            "status": "error",
+            "message": f"HTTP error: {e.response.status_code}",
+            "detail": e.response.text[:500],
+        }
+    except Exception as e:
+        logger.error("Failed to refresh ISP token: %s", e)
+        return {
+            "status": "error",
+            "message": str(e),
+        }
+

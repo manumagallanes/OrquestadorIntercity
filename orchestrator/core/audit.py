@@ -7,6 +7,7 @@ from .state import (
     AUDIT_BUFFER_SIZE,
     AUDIT_LOG,
     INCIDENT_BUFFER_SIZE,
+    INCIDENT_COUNTER,
     INCIDENT_GAUGE,
     INCIDENT_LOG,
     RESOLVED_INCIDENT_BUFFER_SIZE,
@@ -46,6 +47,7 @@ def record_incident(
     if len(INCIDENT_LOG) > INCIDENT_BUFFER_SIZE:
         INCIDENT_LOG.pop()
     INCIDENT_GAUGE.set(len(INCIDENT_LOG))
+    INCIDENT_COUNTER.labels(kind=kind).inc()
     logger.warning("Incident recorded: %s - %s", kind, details)
 
 

@@ -75,6 +75,13 @@ def register_customer_event(
     if cid:
         LATEST_CUSTOMER_EVENTS[cid] = entry
 
+    # Persist to SQLite for dashboard history
+    try:
+        from ..persistence import persistence_store
+        persistence_store.save_customer_event(entry)
+    except Exception as e:
+        logger.warning("Failed to persist customer event to SQLite: %s", e)
+
     logger.info("Customer Event: %s for %s (source=%s)", event_type, cid, source)
 
     # Automatic incident for manual cleanup on 'baja'
@@ -101,13 +108,15 @@ def _filter_customer_events(
     latest_per_customer: bool = False,
 ) -> List[Dict[str, Any]]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
-    candidates = list(CUSTOMER_EVENTS) # iterate over copy
+    
+    # Try to load from SQLite first (persistent), fallback to memory
+    try:
+        from ..persistence import persistence_store
+        candidates = persistence_store.load_customer_events()
+    except Exception:
+        candidates = list(CUSTOMER_EVENTS)
+    
     results = []
-    
-    # If latest_per_customer, we might just look closely at LATEST_CUSTOMER_EVENTS, 
-    # but that is "latest globally per customer", not "latest within window".
-    # Logic in main.py was adhering to filtering.
-    
     seen_customers = set()
     
     for event in candidates:

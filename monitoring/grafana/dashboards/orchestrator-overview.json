@@ -35,7 +35,7 @@
       },
       "options": {
         "mode": "markdown",
-      "content": "### Guia rapida\n1) **Filtros**: elegi Zona y Ventana (dias) arriba del tablero.\n2) **Prioridad diaria**: mirá primero **Incidentes abiertos**. Ahí tenes que corregir datos en ISP-Cube.\n3) **Verificacion**: usa **Incidentes resueltos** para confirmar que el cambio se aplico.\n4) **Mapa**: altas en verde y bajas en rojo con coordenadas validas.\n5) **Resumen**: los paneles de barras muestran el volumen y el tipo de problemas del periodo."
+        "content": "### Guia rapida\n1) **Filtros**: elegi Zona y Ventana (dias) arriba del tablero.\n2) **Prioridad diaria**: mirá primero **Incidentes abiertos**. Ahí tenes que corregir datos en ISP-Cube.\n3) **Verificacion**: usa **Incidentes resueltos** para confirmar que el cambio se aplico.\n4) **Mapa**: altas en verde y bajas en rojo con coordenadas validas.\n5) **Resumen**: los paneles de barras muestran el volumen y el tipo de problemas del periodo."
       }
     },
     {
@@ -791,6 +791,208 @@
       "transformations": [],
       "type": "table",
       "description": "Detalle de recursos faltantes o sobrantes entre ISP-Cube, GeoGrid y SmartOLT."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Clientes",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Altas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#2ecc71",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#e74c3c",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 44
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "increase(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\",source=\"isp-log\"}[1d])",
+          "legendFormat": "Altas",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "increase(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\",source=\"isp-log\"}[1d])",
+          "legendFormat": "Bajas",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Tendencia de Altas y Bajas (diario)",
+      "type": "timeseries",
+      "description": "Evoluci\u00f3n diaria de altas y bajas. Permite identificar tendencias de crecimiento o contracci\u00f3n del servicio."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 44
+      },
+      "id": 21,
+      "options": {
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (zone) (orchestrator_customer_events_total{event_type=\"alta\",source=\"isp-log\"})",
+          "legendFormat": "{{zone}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Distribuci\u00f3n de Altas por Zona",
+      "type": "piechart",
+      "description": "Proporci\u00f3n de instalaciones por zona geogr\u00e1fica. \u00datil para identificar zonas de mayor crecimiento."
     }
   ],
   "refresh": "30s",

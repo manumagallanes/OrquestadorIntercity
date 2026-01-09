@@ -44,10 +44,10 @@ while true; do
         retry_counter=0
     fi
 
-    # Refresh ISP token (cada 6 horas)
+    # Refresh ISP token (cada 6 horas) - llama al endpoint del orquestador
     if [ $refresh_counter -ge $REFRESH_INTERVAL ]; then
-        echo "[scheduler] $(date -Iseconds) Ejecutando refresh_isp_token.py..."
-        python3 /app/scripts/refresh_isp_token.py || true
+        echo "[scheduler] $(date -Iseconds) Refrescando token ISP..."
+        curl -sf -X POST http://orchestrator:8000/ops/refresh-isp-token || echo "[scheduler] WARN: No se pudo refrescar el token ISP"
         refresh_counter=0
     fi
 

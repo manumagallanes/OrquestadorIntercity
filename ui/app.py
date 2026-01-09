@@ -175,6 +175,7 @@ def incidents_section() -> None:
             "geogrid_assignment_conflict",
             "missing_geogrid_assignment",
             "orphan_geogrid_cliente",
+            "manual_cleanup_required",
         ]
         kind_filter = st.selectbox(
             "Filtrar por tipo",

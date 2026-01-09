@@ -5,6 +5,8 @@ services:
       - ../.env
     ports:
       - "8000:8000"
+    volumes:
+      - orchestrator-data:/app/orchestrator/data
     command:
       - uvicorn
       - orchestrator.main:app
@@ -12,6 +14,7 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+    restart: always
 
   scheduler:
     build: .
@@ -38,8 +41,10 @@ services:
       - --storage.tsdb.path=/prometheus
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
     ports:
       - "9091:9090"
+    restart: always
     depends_on:
       - orchestrator
 
@@ -52,6 +57,7 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
+    restart: always
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -71,9 +77,11 @@ services:
       - ORCHESTRATOR_BASE_URL=http://orchestrator:8000
     ports:
       - "8501:8501"
+    restart: always
     depends_on:
       - orchestrator
 
 volumes:
   grafana-data:
   scheduler-state:
+  orchestrator-data:
