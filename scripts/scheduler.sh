@@ -9,10 +9,10 @@ POLL_INTERVAL=${POLL_INTERVAL:-600}           # 10 minutos
 RETRY_INTERVAL=${RETRY_INTERVAL:-1800}        # 30 minutos
 REFRESH_INTERVAL=${REFRESH_INTERVAL:-21600}   # 6 horas
 
-# Contadores
-poll_counter=0
-retry_counter=0
-refresh_counter=0
+# Contadores (Iniciados en el intervalo para ejecutar inmediatamente al arranque)
+poll_counter=$POLL_INTERVAL
+retry_counter=$RETRY_INTERVAL
+refresh_counter=$REFRESH_INTERVAL
 
 # Esperar a que el orquestador esté listo
 echo "[scheduler] Esperando a que el orquestador esté listo..."

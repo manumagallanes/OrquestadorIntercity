@@ -17,6 +17,8 @@ from .domain import (
     _customer_city,
 )
 
+from ..core.audit import record_incident
+
 logger = logging.getLogger("orchestrator.logic.reporting")
 
 
@@ -74,6 +76,20 @@ def register_customer_event(
         LATEST_CUSTOMER_EVENTS[cid] = entry
 
     logger.info("Customer Event: %s for %s (source=%s)", event_type, cid, source)
+
+    # Automatic incident for manual cleanup on 'baja'
+    if event_type == "baja":
+        record_incident(
+            "manual_cleanup_required",
+            {
+                "customer_id": cid,
+                "action": "decommission",
+                "message": "Baja detectada en ISP. Requiere eliminación manual en GeoGrid.",
+                "event_id": event_id,
+                **entry.get("metadata", {}),
+            }
+        )
+
     return entry
 
 
