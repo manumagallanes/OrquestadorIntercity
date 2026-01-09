@@ -407,7 +407,18 @@ async def geogrid_attend_logic(
 
     attend_result = await geogrid_service.attend_customer(settings, attend_payload)
     try:
-        customer_name = geogrid_cliente.get("nome") or geogrid_cliente.get("name") or ""
+        raw_name = geogrid_cliente.get("nome") or geogrid_cliente.get("name") or ""
+        # Si viene en formato "CODIGO - NOMBRE", extraemos solo el nombre
+        if " - " in raw_name:
+            parts = raw_name.split(" - ", 1)
+            # Verificamos si la primera parte parece un código (alfanumérico corto)
+            if len(parts[0]) <= 20: 
+                customer_name = parts[1]
+            else:
+                customer_name = raw_name
+        else:
+            customer_name = raw_name
+
         base_label = f"Drop - {customer_name}" if customer_name else f"Drop - {payload.codigo_integracion}"
         drop_label = base_label
         if (
