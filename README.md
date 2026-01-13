@@ -55,6 +55,47 @@ El sistema opera bajo un modelo de **consumidor inteligente**:
     *   **En GeoGrid:** Se crea/actualiza el cliente, se genera la "casita" (punto de acceso) y se documenta el cable de bajada (Drop) conectado al puerto específico.
 4.  **Auditoría:** Cada acción genera un registro de auditoría. Si ocurre un error (ej. datos inconsistentes), se registra un **Incidente** para su corrección manual posterior.
 
+### Diagrama de Arquitectura
+
+```mermaid
+graph TD
+    %% Definición de Estilos
+    classDef external fill:#f5f5f5,stroke:#333,stroke-width:2px;
+    classDef core fill:#bbdefb,stroke:#0d47a1,stroke-width:2px,color:black;
+    classDef monitor fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:black;
+
+    subgraph Sistemas_Externos [Sistemas Externos]
+        direction TB
+        ISP[ISP-Cube CRM]:::external
+        GEO[GeoGrid GIS]:::external
+    end
+
+    subgraph Docker_Stack [Intercity Orchestrator Stack]
+        direction TB
+        SCH((Scheduler Service)):::core
+        API[API Server (FastAPI)]:::core
+        DB[(Estado SQLite)]:::core
+    end
+
+    subgraph Observability [Monitoreo & Control]
+        direction TB
+        PROM[Prometheus]:::monitor
+        GRAF[Grafana Dashboards]:::monitor
+    end
+
+    %% Flujo Principal
+    SCH -- "1. Polling (Cada 10m)" --> ISP
+    SCH -. "2. Dispara Sincronización" .-> API
+    
+    API -- "3. Valida & Transforma" --> DB
+    API -- "4. Provisiona Cliente & Drop" --> GEO
+    
+    %% Métricas
+    PROM -- "Scrapes /metrics" --> API
+    GRAF -- "Visualiza Datos" --> PROM
+    GRAF -- "Consulta Historial" --> DB
+```
+
 > **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
 
 ### 3.1 Integración de APIs Externas
