@@ -77,6 +77,13 @@ graph LR
     style GRAF fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
 ```
 
+**Leyenda de Colores:**
+| Color | Significado |
+|-------|-------------|
+| 🔵 Azul | Sistemas externos (APIs de terceros) |
+| 🟠 Naranja | Orquestador (desarrollo propio) |
+| 🟢 Verde | Monitoreo y observabilidad |
+
 > **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
 
 ### 3.1 Integración de APIs Externas

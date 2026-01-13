@@ -80,19 +80,44 @@ async def sync_customer(
             payload.connection_id,
             payload.connection_code,
         )
-        customer = await fetch_customer_record(
-            settings,
-            customer_id=payload.customer_id,
-            connection_code=payload.connection_code,
-            connection_id=payload.connection_id,
-        )
+        try:
+            customer = await fetch_customer_record(
+                settings,
+                customer_id=payload.customer_id,
+                connection_code=payload.connection_code,
+                connection_id=payload.connection_id,
+            )
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                logger.warning("Conexión %s no encontrada en ISP (404). Buscando en historial local...", payload.connection_id)
+                from orchestrator.core.state import LATEST_CUSTOMER_EVENTS
+                
+                target_customer_id = None
+                for evt in LATEST_CUSTOMER_EVENTS.values():
+                    meta = evt.get("metadata", {})
+                    if str(meta.get("connection_id")) == str(payload.connection_id):
+                        target_customer_id = evt.get("customer_id")
+                        break
+                
+                if target_customer_id:
+                    logger.info("Recuperado Customer ID %s localmente. Ejecutando baja...", target_customer_id)
+                    decommission_req = DecommissionRequest(
+                        customer_id=target_customer_id,
+                        connection_code=payload.connection_code or "UNKNOWN",
+                        dry_run=False
+                    )
+                    return await decommission_customer(decommission_req, request, settings, state)
+            
+            # Si falla recuperación o es otro error
+            raise
+
+        # Si llegamos aquí, tenemos customer
         _inject_connection_context(
             customer,
             connection_id=payload.connection_id,
             connection_code=payload.connection_code,
-            customer_name=payload.customer_name, # Added customer_name arg in domain.py
+            customer_name=payload.customer_name,
         )
-        # Note: logic in main.py called Inject 3 times redundantly? (lines 2691-2700). I'll skip redundant calls.
         
         ensure_customer_ready(
             customer,
@@ -103,6 +128,7 @@ async def sync_customer(
                 "customer_name": payload.customer_name,
             },
         )
+
         resolved_customer_id = resolve_customer_id(customer, payload.customer_id)
 
         cliente_payload = build_geogrid_cliente_payload(customer)
@@ -745,6 +771,21 @@ async def decommission_customer(
                 )
         except Exception as exc:
             logger.warning("No se pudo limpiar comentario de porta: %s", exc)
+
+        # NUEVO: Marcar visualmente al cliente como BAJA renombrándolo
+        try:
+            # Reconstruimos el payload base del cliente
+            update_payload = build_geogrid_cliente_payload(customer)
+            current_name = update_payload.get("nome", "")
+            
+            # Agregamos prefijo si no lo tiene ya
+            if "[BAJA]" not in current_name.upper():
+                update_payload["nome"] = f"[BAJA] {current_name}"
+                # Enviamos actualización para reflejar el cambio en el mapa/lista
+                await geogrid_service.upsert_cliente(settings, update_payload, fetch_json)
+                logger.info("Cliente %s renombrado con marca de [BAJA] en GeoGrid", geogrid_id)
+        except Exception as exc:
+            logger.warning("No se pudo renombrar cliente a [BAJA]: %s", exc)
 
         DECOMMISSION_COUNTER.labels(result="removed").inc()
         resolve_incidents(

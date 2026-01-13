@@ -58,7 +58,7 @@ STATE_FILE = DEFAULT_STATE_DIR / "connections_provisioning.cursor"
 DEFAULT_STATUS_FILE = DEFAULT_STATE_DIR / "connections_provisioning.status.json"
 
 # Tipos de movimiento que disparan una sincronización hacia GeoGrid
-SYNC_MOVEMENTS = {"create_connection", "ftth_change"}
+SYNC_MOVEMENTS = {"create_connection", "ftth_change", "delete_connection"}
 
 # Tipos de movimiento que registramos como estadísticas en Grafana
 EVENT_MOVEMENTS = {"create_connection", "delete_connection"}
