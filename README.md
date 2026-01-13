@@ -61,14 +61,20 @@ El sistema opera bajo un modelo de **consumidor inteligente**:
 
 ```mermaid
 graph LR
-    %% Flujo de Izquierda a Derecha
-    ISP[ISP-Cube CRM] -->|Nuevas Altas| SCH(Detector Automático)
-    SCH -->|Procesa| API[Orquestador]
+    %% Flujo lineal con terminología técnica
+    ISP[ISP-Cube\n(CRM Comercial)] -->|Nuevas Altas| SCH(Detector Automático)
+    SCH -->|Procesa| ORCH[Orquestador\n(Middleware)]
     
-    API -->|1. Valida Datos| DB[(Memoria)]
-    API -->|2. Dibuja Drop| GEO[GeoGrid Mapa]
+    ORCH -->|1. Valida| DB[(Estado Interno)]
+    ORCH -->|2. Provisiona| GEO[GeoGrid\n(GIS Técnico)]
     
-    API -.->|3. Registra| GRAF[Tablero Grafana]
+    ORCH -.->|3. Métricas| GRAF[Grafana\n(Monitoreo KPIs)]
+
+    %% Estilos visuales (Colores suaves)
+    style ISP fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style GEO fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style ORCH fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style GRAF fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
 ```
 
 > **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
