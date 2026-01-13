@@ -59,41 +59,30 @@ El sistema opera bajo un modelo de **consumidor inteligente**:
 
 ```mermaid
 graph TD
-    %% Definición de Estilos
-    classDef external fill:#f5f5f5,stroke:#333,stroke-width:2px;
-    classDef core fill:#bbdefb,stroke:#0d47a1,stroke-width:2px,color:black;
-    classDef monitor fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:black;
-
-    subgraph Sistemas_Externos [Sistemas Externos]
-        direction TB
-        ISP[ISP-Cube CRM]:::external
-        GEO[GeoGrid GIS]:::external
+    subgraph External [Sistemas Externos]
+        ISP[ISP-Cube CRM]
+        GEO[GeoGrid GIS]
     end
 
-    subgraph Docker_Stack [Intercity Orchestrator Stack]
-        direction TB
-        SCH((Scheduler Service)):::core
-        API[API Server (FastAPI)]:::core
-        DB[(Estado SQLite)]:::core
+    subgraph Core [Orchestrator Stack]
+        SCH((Scheduler))
+        API[API Server]
+        DB[(SQLite DB)]
     end
 
-    subgraph Observability [Monitoreo & Control]
-        direction TB
-        PROM[Prometheus]:::monitor
-        GRAF[Grafana Dashboards]:::monitor
+    subgraph Monitoring [Observabilidad]
+        PROM[Prometheus]
+        GRAF[Grafana]
     end
 
-    %% Flujo Principal
-    SCH -- "1. Polling (Cada 10m)" --> ISP
-    SCH -. "2. Dispara Sincronización" .-> API
+    SCH -->|1. Polling APIs| ISP
+    SCH -.->|2. Trigger| API
     
-    API -- "3. Valida & Transforma" --> DB
-    API -- "4. Provisiona Cliente & Drop" --> GEO
+    API -->|3. Valida/Guarda| DB
+    API -->|4. Provisiona| GEO
     
-    %% Métricas
-    PROM -- "Scrapes /metrics" --> API
-    GRAF -- "Visualiza Datos" --> PROM
-    GRAF -- "Consulta Historial" --> DB
+    PROM -->|Scrape| API
+    GRAF -->|Visualiza| PROM
 ```
 
 > **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
