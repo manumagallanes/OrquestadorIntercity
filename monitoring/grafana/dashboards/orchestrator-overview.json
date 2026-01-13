@@ -26,7 +26,7 @@
     {
       "id": 10,
       "type": "text",
-      "title": "C\u00f3mo leer este tablero",
+      "title": "Cómo leer este tablero",
       "gridPos": {
         "h": 3,
         "w": 24,
@@ -35,7 +35,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Guia rapida\n1) **Filtros**: elegi Zona y Ventana (dias) arriba del tablero.\n2) **Prioridad diaria**: mirá primero **Incidentes abiertos**. Ahí tenes que corregir datos en ISP-Cube.\n3) **Verificacion**: usa **Incidentes resueltos** para confirmar que el cambio se aplico.\n4) **Mapa**: altas en verde y bajas en rojo con coordenadas validas.\n5) **Resumen**: los paneles de barras muestran el volumen y el tipo de problemas del periodo."
+        "content": "### 📖 Guía de Operación Diaria\n\n1. **Filtros Globales 🌍**: Seleccioná la **Zona** y la **Ventana de tiempo** en la barra superior para acotar los datos.\n2. **⚠️ Atención Inmediata**: Revisá el panel de **Incidentes Abiertos**.\n   - Estos son errores de sincronización (ej. faltan datos en la ficha del cliente).\n   - **Acción**: Corregir los datos en ISPCube. El orquestador reintentará automáticamente.\n3. **📊 Indicadores Clave**:\n   - **Altas/Bajas**: Movimientos detectados desde el log de auditoría.\n   - **Crecimiento Neto**: Balance final (Altas - Bajas).\n4. **📍 Mapa en vivo**: Visualizá las nuevas instalaciones (**Verde**) y desconexiones (**Rojo**). Si un punto cae en el centro por defecto, el cliente no tiene coordenadas válidas."
       }
     },
     {
@@ -53,23 +53,15 @@
           "displayName": "Altas",
           "mappings": [],
           "thresholds": {
-            "mode": "percentage",
+            "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "orange",
-                "value": 40
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
-          "unit": "customers"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -102,8 +94,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\",source=\"isp-log\"})",
-          "interval": "",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",source=\"isp-log\"})",
+          "instant": true,
           "legendFormat": "Altas acumuladas",
           "refId": "A"
         }
@@ -127,23 +119,15 @@
           "displayName": "Bajas",
           "mappings": [],
           "thresholds": {
-            "mode": "percentage",
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 30
-              },
-              {
                 "color": "red",
-                "value": 60
+                "value": null
               }
             ]
           },
-          "unit": "customers"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -176,7 +160,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\",source=\"isp-log\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"baja\",source=\"isp-log\"})",
+          "instant": true,
           "legendFormat": "Bajas acumuladas",
           "refId": "A"
         }
@@ -212,11 +197,11 @@
               },
               {
                 "color": "green",
-                "value": 10
+                "value": 1
               }
             ]
           },
-          "unit": "customers"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -249,7 +234,8 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\",source=\"isp-log\"}) - sum(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\",source=\"isp-log\"})",
+          "expr": "sum(orchestrator_customer_events_total{event_type=\"alta\",source=\"isp-log\"}) - sum(orchestrator_customer_events_total{event_type=\"baja\",source=\"isp-log\"})",
+          "instant": true,
           "legendFormat": "Neto acumulado",
           "refId": "A"
         }
@@ -342,7 +328,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 260
+                "value": 300
               }
             ]
           }
@@ -357,8 +343,6 @@
       "id": 7,
       "options": {
         "showHeader": true,
-        "showSearch": true,
-        "pageSize": 15,
         "footer": {
           "enablePagination": true,
           "fields": "",
@@ -378,15 +362,16 @@
             "uid": "orchestrator-analytics"
           },
           "editorMode": "code",
-          "payload": {},
+          "payload": {
+            "lookback_days": "$lookback_days"
+          },
           "refId": "A",
           "target": "incidents_open"
         }
       ],
       "title": "Incidentes abiertos",
-      "transformations": [],
       "type": "table",
-      "description": "Registro de incidentes a\u00fan sin resolver con el cliente afectado y el detalle t\u00e9cnico."
+      "description": "Registro de incidentes aún sin resolver con el cliente afectado y el detalle técnico."
     },
     {
       "datasource": {
@@ -427,12 +412,24 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "customer_id"
+              "options": "customer_label"
             },
             "properties": [
               {
                 "id": "displayName",
                 "value": "Cliente"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "customer_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
               }
             ]
           },
@@ -463,28 +460,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "incident_id"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Incident ID"
-              },
-              {
-                "id": "custom.width",
-                "value": 180
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "resolution_reason"
             },
             "properties": [
               {
                 "id": "displayName",
-                "value": "Motivo resoluci\u00f3n"
+                "value": "Motivo resolución"
               }
             ]
           },
@@ -533,9 +514,7 @@
             "sum"
           ]
         },
-        "pageSize": 15,
         "showHeader": true,
-        "showSearch": true,
         "sortBy": [
           {
             "desc": true,
@@ -558,9 +537,8 @@
         }
       ],
       "title": "Incidentes resueltos",
-      "transformations": [],
       "type": "table",
-      "description": "Detalle de incidentes corregidos dentro de la ventana de d\u00edas configurada."
+      "description": "Detalle de incidentes corregidos dentro de la ventana de días configurada."
     },
     {
       "datasource": {
@@ -576,10 +554,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 11,
+        "h": 12,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 15
       },
       "id": 8,
       "options": {
@@ -604,19 +582,17 @@
                 "mode": "fixed"
               },
               "shape": "circle",
-              "size": 8,
+              "size": {
+                "fixed": 8,
+                "min": 5,
+                "max": 15
+              },
               "showLegend": true
             },
-            "data": {
-              "format": "table",
-              "source": "A",
-              "mapping": {
-                "latitude": "lat",
-                "longitude": "lon",
-                "name": "customer_label",
-                "secondary": "zone",
-                "time": "timestamp"
-              }
+            "location": {
+              "mode": "coords",
+              "latitude": "lat",
+              "longitude": "lon"
             }
           },
           {
@@ -628,31 +604,28 @@
                 "mode": "fixed"
               },
               "shape": "triangle",
-              "size": 8,
+              "size": {
+                "fixed": 8,
+                "min": 5,
+                "max": 15
+              },
               "showLegend": true
             },
-            "data": {
-              "format": "table",
-              "source": "B",
-              "mapping": {
-                "latitude": "lat",
-                "longitude": "lon",
-                "name": "customer_label",
-                "secondary": "zone",
-                "time": "timestamp"
-              }
+            "location": {
+              "mode": "coords",
+              "latitude": "lat",
+              "longitude": "lon"
             }
           }
         ],
         "view": {
-          "lat": -33.12,
-          "lon": -64.35,
-          "lng": -64.35,
-          "zoom": 10,
-          "center": {
-            "lat": -33.12,
-            "lon": -64.35
-          }
+          "id": "coords",
+          "lat": -31.42,
+          "lon": -64.19,
+          "zoom": 11
+        },
+        "tooltip": {
+          "mode": "details"
         }
       },
       "targets": [
@@ -686,111 +659,8 @@
         }
       ],
       "title": "Altas y bajas georreferenciadas",
-      "transformations": [],
       "type": "geomap",
-      "description": "Distribuci\u00f3n geogr\u00e1fica de altas (verde) y bajas (rojo) en el periodo seleccionado."
-    },
-    {
-      "datasource": {
-        "type": "simpod-json-datasource",
-        "uid": "orchestrator-analytics"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "center"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 30
-      },
-      "id": 15,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "last"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "simpod-json-datasource",
-            "uid": "orchestrator-analytics"
-          },
-          "editorMode": "code",
-          "payload": {
-            "limit": 200
-          },
-          "refId": "A",
-          "target": "reconciliation_summary"
-        }
-      ],
-      "title": "Conciliaci\u00f3n \u2013 resumen \u00faltima ejecuci\u00f3n",
-      "transformations": [],
-      "type": "table",
-      "description": "Conteo de inconsistencias detectadas en la ejecuci\u00f3n m\u00e1s reciente."
-    },
-    {
-      "datasource": {
-        "type": "simpod-json-datasource",
-        "uid": "orchestrator-analytics"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 34
-      },
-      "id": 16,
-      "options": {
-        "showHeader": true,
-        "showSearch": true,
-        "pageSize": 15,
-        "footer": {
-          "enablePagination": true,
-          "fields": "",
-          "reducer": []
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "simpod-json-datasource",
-            "uid": "orchestrator-analytics"
-          },
-          "editorMode": "code",
-          "payload": {
-            "limit": 400
-          },
-          "refId": "A",
-          "target": "reconciliation_results"
-        }
-      ],
-      "title": "Conciliaci\u00f3n \u2013 inconsistencias detectadas",
-      "transformations": [],
-      "type": "table",
-      "description": "Detalle de recursos faltantes o sobrantes entre ISP-Cube, GeoGrid y SmartOLT."
+      "description": "Distribución geográfica de altas (verde) y bajas (rojo) en el periodo seleccionado."
     },
     {
       "datasource": {
@@ -876,7 +746,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 44
+        "y": 27
       },
       "id": 20,
       "options": {
@@ -900,7 +770,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "increase(orchestrator_customer_events_total{event_type=\"alta\",zone=~\"${zone:regex}\",source=\"isp-log\"}[1d])",
+          "expr": "increase(orchestrator_customer_events_total{event_type=\"alta\",source=\"isp-log\"}[1d])",
           "legendFormat": "Altas",
           "range": true,
           "refId": "A"
@@ -911,7 +781,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "increase(orchestrator_customer_events_total{event_type=\"baja\",zone=~\"${zone:regex}\",source=\"isp-log\"}[1d])",
+          "expr": "increase(orchestrator_customer_events_total{event_type=\"baja\",source=\"isp-log\"}[1d])",
           "legendFormat": "Bajas",
           "range": true,
           "refId": "B"
@@ -919,7 +789,7 @@
       ],
       "title": "Tendencia de Altas y Bajas (diario)",
       "type": "timeseries",
-      "description": "Evoluci\u00f3n diaria de altas y bajas. Permite identificar tendencias de crecimiento o contracci\u00f3n del servicio."
+      "description": "Evolución diaria de altas y bajas. Permite identificar tendencias de crecimiento o contracción del servicio."
     },
     {
       "datasource": {
@@ -948,7 +818,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 44
+        "y": 27
       },
       "id": 21,
       "options": {
@@ -990,9 +860,9 @@
           "refId": "A"
         }
       ],
-      "title": "Distribuci\u00f3n de Altas por Zona",
+      "title": "Distribución de Altas por Zona",
       "type": "piechart",
-      "description": "Proporci\u00f3n de instalaciones por zona geogr\u00e1fica. \u00datil para identificar zonas de mayor crecimiento."
+      "description": "Proporción de instalaciones por zona geográfica. Útil para identificar zonas de mayor crecimiento."
     }
   ],
   "refresh": "30s",
@@ -1025,7 +895,7 @@
       },
       {
         "name": "lookback_days",
-        "label": "Ventana (d\u00edas)",
+        "label": "Ventana (días)",
         "type": "custom",
         "query": "1,7,30,90",
         "options": [
@@ -1085,6 +955,6 @@
   "timezone": "browser",
   "title": "Monitoreo Orquestador Intercity",
   "uid": "orchestrator-overview",
-  "version": 8,
+  "version": 9,
   "weekStart": ""
 }

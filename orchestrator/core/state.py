@@ -172,3 +172,72 @@ INTEGRATION_ERROR_COUNTER = Counter(
     "Errores al invocar servicios externos",
     ["service", "status"],
 )
+
+def initialize_metrics():
+    """Inicializa métricas y restaura el estado desde la persistencia (SQLite)."""
+    logger.info("Inicializando métricas y restaurando estado desde persistencia...")
+    
+    try:
+        # Import local para evitar dependencia circular
+        from orchestrator.persistence import persistence_store
+        
+        # 1. Cargar eventos históricos desde DB
+        events = persistence_store.load_customer_events()
+        logger.info("Eventos históricos cargados: %d", len(events))
+        
+        # 2. Restaurar deque en memoria (para consistencia interna)
+        CUSTOMER_EVENTS.clear()
+        CUSTOMER_EVENTS.extend(events)
+        
+        # Restaurar mapa de últimos eventos
+        for ev in events:
+            cid = ev.get("customer_id")
+            if cid:
+                LATEST_CUSTOMER_EVENTS[cid] = ev
+
+        # 3. Inicializar contadores Prometheus (base 0 para todas las series conocidas)
+        # Esto asegura que aparezcan en Grafana aunque sean 0.
+        known_sources = {"isp-log", "sync", "runtime", "manual", "unknown"}
+        known_zones = set(SYNTHETIC_EVENT_ZONES)
+        known_zones.add(DEFAULT_ZONE_LABEL)
+        
+        # Recolectar zonas y fuentes vistas en el historial para inicializarlas también
+        for ev in events:
+            z = ev.get("zone")
+            if z: known_zones.add(z)
+            s = ev.get("source")
+            if s: known_sources.add(s)
+
+        for et in ["alta", "baja"]:
+            for source in known_sources:
+                for z in known_zones:
+                    CUSTOMER_EVENT_COUNTER.labels(event_type=et, zone=z, source=source).inc(0)
+        
+        # 4. Replay de eventos para calcular totales acumulados
+        # Prometheus Counter empieza en 0 al iniciar el proceso.
+        # Sumamos 1 por cada evento histórico relevante.
+        for ev in events:
+            z = ev.get("zone") or DEFAULT_ZONE_LABEL
+            src = ev.get("source") or "unknown"
+            etype = ev.get("event_type")
+            
+            if etype in ["alta", "baja"]:
+                CUSTOMER_EVENT_COUNTER.labels(event_type=etype, zone=z, source=src).inc()
+
+        # Inicializar otros contadores críticos
+        SYNC_COUNTER.labels(result="created").inc(0)
+        SYNC_COUNTER.labels(result="updated").inc(0)
+        SYNC_COUNTER.labels(result="error").inc(0)
+        
+    except Exception as e:
+        logger.error("Error al restaurar estado desde persistencia: %s", e)
+        # Fallback: inicialización básica si falla la DB
+        for et in ["alta", "baja"]:
+             CUSTOMER_EVENT_COUNTER.labels(event_type=et, zone=DEFAULT_ZONE_LABEL, source="unknown").inc(0)
+
+# Inicializar métricas al importar este módulo (o explícitamente desde main)
+# Nota: main.py llama a initialize_metrics() en startup, así que aquí
+# solo dejamos la definición o una llamada segura.
+# Si main.py lo llama, mejor no llamarlo aquí para evitar doble ejecución inoportuna
+# (aunque es idempotente en lógica, consume CPU).
+# Dejaremos que main.py sea el encargado principal.

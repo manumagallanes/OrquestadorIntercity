@@ -57,9 +57,34 @@ El sistema opera bajo un modelo de **consumidor inteligente**:
 
 > **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
 
+### 3.1 Integración de APIs Externas
+La lógica de orquestación se construyó basándose estrictamente en las especificaciones de interfaz (contratos) de los proveedores:
+*   **ISP-Cube API (v1):** Utilizada para la extracción de logs (`/connections/connections_provisioning_logs`) y autenticación basada en Tokens temporales.
+*   **GeoGrid API (v3):** Utilizada para la manipulación topológica de la red. Se implementaron algoritmos para determinar la caja más cercana y conectar el "Drop" virtualmente.
+
 ---
 
-## 4. Requisitos Previos
+## 4. Conceptos de Ingeniería Aplicados
+
+Para garantizar la robustez necesaria en un entorno crítico de telecomunicaciones, se aplicaron los siguientes patrones de diseño y estrategias:
+
+### 4.1 Patrones de Arquitectura
+*   **Clean Architecture (Capas):** Separación estricta entre la lógica de dominio (`logic/`), los adaptadores de servicios externos (`services/`) y la capa de exposición (`api/`). Esto desacopla el negocio de la tecnología de transporte.
+*   **Event-Driven (Pull-Based):** En lugar de acoplamiento fuerte síncrono, el sistema reacciona a eventos asíncronos consultados periódicamente, lo que reduce el impacto en el rendimiento de los sistemas BSS/OSS.
+
+### 4.2 Resiliencia y Fiabilidad
+*   **Retry Pattern & Exponential Backoff:** Las comunicaciones HTTP inestables se manejan mediante librerías como `tenacity` y lógica propia en los scripts de *polling*, reintentando operaciones fallidas con tiempos de espera crecientes.
+*   **Auto-Healing (Autosanación):** El script `retry_incidents.py` actúa como un agente de recuperación, monitoreando fallos transitorios (ej. "GeoGrid inalcanzable") y reintentándolos automáticamente sin intervención humana.
+*   **Idempotencia:** El diseño garantiza que procesar el mismo evento de cliente múltiples veces tenga el mismo resultado y no genere duplicados en el inventario.
+
+### 4.3 Tecnologías Clave (Python Moderno)
+*   **Type Hinting & Pydantic:** Uso extensivo de tipado estático y validación de esquemas en tiempo de ejecución para prevenir errores de tipo comunes en lenguajes dinámicos.
+*   **Asincronía (AsyncIO):** Preparado para alta concurrencia en I/O bound tasks utilizando FastAPI y servidores ASGI.
+*   **Persistencia Ligera:** Uso de SQLite para mantener un estado local robusto de métricas y cursores, evitando la complejidad de mantener una base de datos externa pesada (Postgres/MySQL) para esta escala.
+
+---
+
+## 5. Requisitos Previos
 
 Para ejecutar este proyecto en un entorno local o productivo, se requiere:
 
@@ -69,30 +94,30 @@ Para ejecutar este proyecto en un entorno local o productivo, se requiere:
 
 ---
 
-## 5. Instalación y Puesta en Marcha
+## 6. Instalación y Puesta en Marcha
 
-### 5.1 Configuración de Entorno
+### 6.1 Configuración de Entorno
 1.  Clonar el repositorio.
 2.  Crear un archivo `.env` basado en `.env.example`.
 3.  Configurar las URLs y credenciales de los servicios externos en `config/environments/dev.json` (o el entorno correspondiente).
 
 **Importante:** La versión actual **no utiliza mocks**. Requiere conexión real a los servicios o configuración adecuada de stubs externos si se desea simular tráfico.
 
-### 5.2 Ejecución
+### 6.2 Ejecución
 Iniciar todos los servicios:
 
 ```bash
 docker-compose up --build -d
 ```
 
-### 5.3 Verificación
+### 6.3 Verificación
 *   **API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 *   **Estado de Salud:** [http://localhost:8000/health](http://localhost:8000/health)
 *   **Dashboards:** [http://localhost:3000](http://localhost:3000) (Credenciales: admin/admin)
 
 ---
 
-## 6. Pruebas Automatizadas
+## 7. Pruebas Automatizadas
 
 Como parte de la ingeniería de calidad del software, se ha incluido una suite de pruebas automatizadas (unitarias e integración) que validan la lógica de dominio y la integridad de los endpoints.
 
@@ -108,7 +133,7 @@ python -m pytest tests
 
 ---
 
-## 7. Scripts de Mantenimiento
+## 8. Scripts de Mantenimiento
 
 Se incluyen scripts en `scripts/` para tareas operativas recurrentes:
 
@@ -118,7 +143,7 @@ Se incluyen scripts en `scripts/` para tareas operativas recurrentes:
 
 ---
 
-## 8. Licencia y Autoría
+## 9. Licencia y Autoría
 
 Este proyecto forma parte de las prácticas profesionales de **Manuel Magallanes** para la carrera de Ingeniería en Telecomunicaciones.
 

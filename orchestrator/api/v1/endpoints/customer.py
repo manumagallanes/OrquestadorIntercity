@@ -111,6 +111,16 @@ async def sync_customer(
                 settings, cliente_payload, fetch_json
             )
             fallback_mode = False
+            
+            # Registrar evento de alta exitosa si se creó o actualizó (opcionalmente)
+            # Para sync manual, es útil verlo en el mapa.
+            if action in ("created", "updated"):
+                register_customer_event(
+                    "alta",
+                    customer=customer,
+                    source="sync", 
+                    metadata={"geogrid_id": geogrid_id, "action": action},
+                )
         except HTTPException as geogrid_exc:
             detail = _resolve_geogrid_error_detail(geogrid_exc)
             if detail is None:

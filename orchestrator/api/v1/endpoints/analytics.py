@@ -367,6 +367,9 @@ async def grafana_query(request: Request) -> List[Dict[str, Any]]:
         return []
 
     responses: List[Dict[str, Any]] = []
+    
+    logger.debug("Grafana /query targets: %s", [t.get('target') for t in targets])
+
     for target in targets:
         if not isinstance(target, dict):
             continue
