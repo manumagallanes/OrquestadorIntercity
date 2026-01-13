@@ -57,32 +57,18 @@ El sistema opera bajo un modelo de **consumidor inteligente**:
 
 ### Diagrama de Arquitectura
 
+### Diagrama de Flujo Simplificado
+
 ```mermaid
-graph TD
-    subgraph External [Sistemas Externos]
-        ISP[ISP-Cube CRM]
-        GEO[GeoGrid GIS]
-    end
-
-    subgraph Core [Orchestrator Stack]
-        SCH((Scheduler))
-        API[API Server]
-        DB[(SQLite DB)]
-    end
-
-    subgraph Monitoring [Observabilidad]
-        PROM[Prometheus]
-        GRAF[Grafana]
-    end
-
-    SCH -->|1. Polling APIs| ISP
-    SCH -.->|2. Trigger| API
+graph LR
+    %% Flujo de Izquierda a Derecha
+    ISP[ISP-Cube CRM] -->|Nuevas Altas| SCH(Detector Automático)
+    SCH -->|Procesa| API[Orquestador]
     
-    API -->|3. Valida/Guarda| DB
-    API -->|4. Provisiona| GEO
+    API -->|1. Valida Datos| DB[(Memoria)]
+    API -->|2. Dibuja Drop| GEO[GeoGrid Mapa]
     
-    PROM -->|Scrape| API
-    GRAF -->|Visualiza| PROM
+    API -.->|3. Registra| GRAF[Tablero Grafana]
 ```
 
 > **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
