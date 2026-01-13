@@ -62,13 +62,13 @@ El sistema opera bajo un modelo de **consumidor inteligente**:
 ```mermaid
 graph LR
     %% Flujo lineal con terminología técnica
-    ISP[ISP-Cube\n(CRM Comercial)] -->|Nuevas Altas| SCH(Detector Automático)
-    SCH -->|Procesa| ORCH[Orquestador\n(Middleware)]
+    ISP["ISP-Cube<br/>(CRM Comercial)"] -->|Nuevas Altas| SCH(Detector Automático)
+    SCH -->|Procesa| ORCH["Orquestador<br/>(Middleware)"]
     
     ORCH -->|1. Valida| DB[(Estado Interno)]
-    ORCH -->|2. Provisiona| GEO[GeoGrid\n(GIS Técnico)]
+    ORCH -->|2. Provisiona| GEO["GeoGrid<br/>(GIS Técnico)"]
     
-    ORCH -.->|3. Métricas| GRAF[Grafana\n(Monitoreo KPIs)]
+    ORCH -.->|3. Métricas| GRAF["Grafana<br/>(Monitoreo KPIs)"]
 
     %% Estilos visuales (Colores suaves)
     style ISP fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
