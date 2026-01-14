@@ -53,16 +53,21 @@ async def create_customer_event(
 ) -> Dict[str, Any]:
     customer: Optional[Dict[str, Any]] = None
     if payload.customer_id is not None:
-        isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
-        async with httpx.AsyncClient(**isp_client_kwargs) as client:
-            customer = await fetch_json(
-                client,
-                "GET",
-                f"/customers/{payload.customer_id}",
-                service="isp",
-                settings=settings,
-                region_name=isp_region,
-            )
+        # Intenta obtener datos adicionales del cliente desde ISP-Cube (opcional)
+        try:
+            isp_client_kwargs, isp_region = settings.http_client_kwargs("isp")
+            async with httpx.AsyncClient(**isp_client_kwargs) as client:
+                customer = await fetch_json(
+                    client,
+                    "GET",
+                    f"/customers/{payload.customer_id}",
+                    service="isp",
+                    settings=settings,
+                    region_name=isp_region,
+                )
+        except Exception as e:
+            # Si falla la consulta a ISP, continuamos sin los datos adicionales
+            logger.debug("No se pudo obtener datos del cliente %s desde ISP: %s", payload.customer_id, e)
 
     event_metadata = dict(payload.metadata)
     if payload.source and "origin" not in event_metadata:

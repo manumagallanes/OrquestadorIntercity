@@ -58,10 +58,10 @@ STATE_FILE = DEFAULT_STATE_DIR / "connections_provisioning.cursor"
 DEFAULT_STATUS_FILE = DEFAULT_STATE_DIR / "connections_provisioning.status.json"
 
 # Tipos de movimiento que disparan una sincronización hacia GeoGrid
-SYNC_MOVEMENTS = {"create_connection", "ftth_change", "delete_connection"}
+SYNC_MOVEMENTS = {"create_connection", "ftth_change", "delete_connection", "enable_customer", "disable_customer"}
 
 # Tipos de movimiento que registramos como estadísticas en Grafana
-EVENT_MOVEMENTS = {"create_connection", "delete_connection"}
+EVENT_MOVEMENTS = {"create_connection", "delete_connection", "enable_customer", "disable_customer"}
 
 REQUIRED_ISP_VARS = [
     "ISP_BASE_URL",
@@ -322,7 +322,8 @@ def sync_connection(
     *,
     orchestrator_base: str,
     user_header: str,
-    connection_id: int,
+    connection_id: Optional[int] = None,
+    customer_id: Optional[int] = None,
     customer_name: Optional[str] = None,
 ) -> None:
     """
@@ -331,7 +332,11 @@ def sync_connection(
     """
     url = f"{orchestrator_base.rstrip('/')}/sync/customer"
     headers = {"Content-Type": "application/json", user_header: "provisioning-job"}
-    payload = {"connection_id": connection_id}
+    payload = {}
+    if connection_id is not None:
+        payload["connection_id"] = connection_id
+    if customer_id is not None:
+        payload["customer_id"] = customer_id
     if customer_name:
         payload["customer_name"] = customer_name
         
@@ -368,7 +373,7 @@ def register_customer_event_from_log(
     if movement_type not in EVENT_MOVEMENTS:
         return
         
-    event_type = "alta" if movement_type == "create_connection" else "baja"
+    event_type = "alta" if movement_type in {"create_connection", "enable_customer"} else "baja"
     zone = entry.get("connection_city_name") or entry.get("customer_city")
     
     payload: Dict[str, Any] = {
@@ -400,11 +405,13 @@ def register_customer_event_from_log(
     try:
         response = client.post(url, json=payload, headers=headers, timeout=15.0)
         response.raise_for_status()
+        logger.info("Evento registrado en Analytics: %s para %s", event_type, entry.get("customer_name") or entry.get("connection_id"))
     except httpx.HTTPError as exc:
         logger.warning(
-            "No se pudo registrar evento ISP en Analytics (id=%s): %s",
+            "No se pudo registrar evento ISP en Analytics (id=%s): %s - Response: %s",
             entry.get("id"),
             exc,
+            getattr(exc, 'response', None) and exc.response.text[:200] if hasattr(exc, 'response') and exc.response else 'N/A',
         )
 
 
@@ -452,31 +459,43 @@ def process_logs(
                 continue
             
             connection_id = entry.get("connection_id")
-            if connection_id is None:
+            customer_id = entry.get("customer_id")
+            
+            # Usar connection_id o customer_id como identificador
+            if connection_id is None and customer_id is None:
                 skipped += 1
                 continue
+            
+            # Preferir connection_id, pero usar customer_id como fallback
+            identifier = connection_id if connection_id is not None else f"cust_{customer_id}"
                 
             try:
-                connection_id_int = int(connection_id)
+                identifier_int = int(connection_id) if connection_id is not None else int(customer_id)
             except (TypeError, ValueError):
                 skipped += 1
                 continue
+            
+            # Marcar si usamos customer_id en lugar de connection_id
+            entry["_use_customer_id"] = (connection_id is None)
                 
             entry_ts = movement_ts or min_ts
             
-            # Guardamos solo el movimiento más reciente para esta conexión
-            existing = candidates.get(connection_id_int)
+            # Guardamos solo el movimiento más reciente para esta conexión/cliente
+            existing = candidates.get(identifier_int)
             if existing is None or entry_ts > existing[0]:
-                candidates[connection_id_int] = (entry_ts, entry)
+                candidates[identifier_int] = (entry_ts, entry)
 
         # Paso 3: Ejecutar sincronizaciones en orden cronológico
-        for connection_id_int, (_, entry) in sorted(
+        for id_int, (_, entry) in sorted(
             candidates.items(), key=lambda item: item[1][0]
         ):
             movement_type = entry.get("movement_type") or "unknown"
+            use_customer_id = entry.get("_use_customer_id", False)
+            
             logger.info(
-                "Procesando conexion=%s tipo=%s nombre=%s",
-                connection_id_int,
+                "Procesando %s=%s tipo=%s nombre=%s",
+                "customer_id" if use_customer_id else "conexion",
+                id_int,
                 movement_type,
                 entry.get("customer_name"),
             )
@@ -485,15 +504,16 @@ def process_logs(
                     orch_client,
                     orchestrator_base=orchestrator_base,
                     user_header=user_header,
-                    connection_id=connection_id_int,
+                    connection_id=None if use_customer_id else id_int,
+                    customer_id=id_int if use_customer_id else entry.get("customer_id"),
                     customer_name=entry.get("customer_name"),
                 )
                 processed += 1
             except Exception:
                 # Si falla una conexión, loguear y seguir con la siguiente.
                 logger.exception(
-                    "Error sincronizando connection_id=%s (entry=%s)",
-                    connection_id,
+                    "Error sincronizando id=%s (entry=%s)",
+                    id_int,
                     _movement_key(entry),
                 )
                 continue

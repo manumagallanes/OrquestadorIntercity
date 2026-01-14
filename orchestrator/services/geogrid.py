@@ -180,6 +180,48 @@ async def upsert_cliente(
         return int(existing_id), "updated"
 
 
+async def mark_cliente_as_baja(
+    settings: "EnvConfig",
+    geogrid_id: int,
+    current_name: str,
+) -> bool:
+    """
+    Marca un cliente como dado de baja en GeoGrid, 
+    renombrándolo con el prefijo 'BAJA - '.
+    
+    Returns True si se actualizó correctamente, False si ya tenía el prefijo.
+    """
+    BAJA_PREFIX = "BAJA - "
+    
+    # Si ya tiene el prefijo, no hacer nada
+    if current_name.startswith(BAJA_PREFIX):
+        logger.info("Cliente %s ya está marcado como baja: %s", geogrid_id, current_name)
+        return False
+    
+    new_name = f"{BAJA_PREFIX}{current_name}"
+    
+    client_kwargs, _ = settings.http_client_kwargs("geogrid")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        payload = {"dados": {"nome": new_name}}
+        response = await client.put(f"/clientes/{geogrid_id}", json=payload)
+        logger.info(
+            "HTTP PUT %s/clientes/%s (BAJA rename) -> %s",
+            client_kwargs["base_url"],
+            geogrid_id,
+            response.status_code,
+        )
+        if response.status_code not in {status.HTTP_200_OK, status.HTTP_204_NO_CONTENT}:
+            logger.warning(
+                "No se pudo renombrar cliente %s a BAJA: %s",
+                geogrid_id,
+                response.text[:200] if response.text else "empty",
+            )
+            return False
+    
+    logger.info("Cliente %s renombrado a: %s", geogrid_id, new_name)
+    return True
+
+
 async def assign_port(
     settings: "EnvConfig",
     assignment_payload: Dict[str, Any],

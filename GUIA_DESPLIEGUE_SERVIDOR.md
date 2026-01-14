@@ -154,14 +154,35 @@ docker compose up -d
 ```
 
 ### Persistencia de Datos
-*   **Base de Datos (Estado):** Los eventos históricos se guardan en un archivo SQLite dentro del volumen `orchestrator-data`. Esto asegura que los contadores de Grafana se mantengan tras reinicios.
-*   **Resetear Datos (Limpieza):** Si desea borrar toda la historia y comenzar de cero (ej. tras pruebas iniciales):
-    ```bash
-    # ATENCIÓN: Esto borra toda la historia de eventos
-    docker compose down
-    sudo rm -rf orchestrator/data/state.db
-    docker compose up -d
-    ```
+*   **Base de Datos (Estado):** Los eventos históricos se guardan en un archivo SQLite (`state.db`) dentro del volumen persistente.
+*   **Backups:** Se recomienda copiar periódicamente la carpeta `orchestrator/data/`.
+
+---
+
+## 🧹 5. Clean Start (Inicio Limpio)
+
+Si necesita reiniciar el sistema desde cero (por ejemplo, después de una fase de pruebas para pasar a operación real), siga estos pasos.
+
+⚠️ **ADVERTENCIA:** Esto eliminará todo el historial de eventos, contadores de altas/bajas acumuladas y registros de incidentes de la base de datos interna.
+
+Ejecute los siguientes comandos:
+
+```bash
+# 1. Detener todos los servicios
+docker compose down
+
+# 2. Eliminar la base de datos de estado (se regenerará automáticamente)
+# Nota: La ruta es relativa a donde clonó el repositorio
+sudo rm -f orchestrator/data/state.db
+
+# 3. (Opcional) Si desea reiniciar también métricas de Prometheus
+docker compose down -v  # Esto borra tamién volúmenes de Prometheus y Grafana (cuidado)
+
+# 4. Volver a iniciar el sistema
+docker compose up -d
+```
+
+Al volver a iniciar, los contadores en Grafana comenzarán en **0**.
 
 ### Copias de Seguridad (Backup)
 Se recomienda hacer backup periódico del archivo `.env` y, opcionalmente, del volumen `orchestrator-data` si se desea conservar el histórico de incidentes a largo plazo.

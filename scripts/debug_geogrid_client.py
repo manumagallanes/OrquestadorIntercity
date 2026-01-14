@@ -1,43 +1,64 @@
-import asyncio
 import sys
 sys.path.append("/app")
-import os
-import json
+
+import asyncio
+import logging
 import httpx
-from orchestrator.config import get_settings
+# Ajuste de imports para correr dentro del contenedor
+try:
+    from orchestrator.core.config import get_settings
+    from orchestrator.core.integration import fetch_json
+except ImportError:
+    # Si corre desde root sin estar instalado como paquete
+    sys.path.append("/app")
+    from orchestrator.core.config import get_settings
+    from orchestrator.core.integration import fetch_json
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("debug")
 
 async def main():
-    # Cargar config (asume variables de entorno cargadas en docker)
-    try:
-        settings = get_settings()
-    except Exception:
-        # Fallback manual si falla pydantic
-        class Settings:
-            geogrid_base_url = os.getenv("GEOGRID_BASE_URL")
-            geogrid_api_token = os.getenv("GEOGRID_API_TOKEN")
-        settings = Settings()
-
-    if not settings.geogrid_base_url or not settings.geogrid_api_token:
-        print("Error: Falta config GEOGRID en entorno")
-        return
-
-    target = "11140"
-    base_url = settings.geogrid_base_url.rstrip('/')
+    settings = get_settings()
+    client_kwargs, region = settings.http_client_kwargs("geogrid")
     
-    # 1. Buscar por query general (nombre/codigo)
-    print(f"--- Buscando '{target}' en /clientes ---")
-    async with httpx.AsyncClient(verify=False) as client:
+    # 1. Probar búsqueda por codigoIntegracao
+    print("\n--- Buscando por codigoIntegracao=11122 ---")
+    async with httpx.AsyncClient(**client_kwargs) as client:
         try:
-            resp = await client.get(
-                f"{base_url}/clientes",
-                params={"q": target},
-                headers={"Authorization": f"Bearer {settings.geogrid_api_token}"},
-                timeout=10
+            resp = await fetch_json(
+                client, "GET", "/clientes",
+                params={"codigoIntegracao": "11122"},
+                service="geogrid", settings=settings, region_name=region
             )
-            data = resp.json()
-            print(json.dumps(data, indent=2))
+            print(resp)
         except Exception as e:
-            print(f"Error consulta 1: {e}")
+            print(f"Error: {e}")
+
+    # 2. Probar búsqueda por q=PLANTA EXTERNA
+    print("\n--- Buscando por q=PLANTA EXTERNA ---")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        try:
+            resp = await fetch_json(
+                client, "GET", "/clientes",
+                params={"q": "PLANTA EXTERNA"},
+                service="geogrid", settings=settings, region_name=region
+            )
+            print(resp)
+        except Exception as e:
+            print(f"Error: {e}")
+
+    # 3. Probar búsqueda por q=11122
+    print("\n--- Buscando por q=11122 ---")
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        try:
+            resp = await fetch_json(
+                client, "GET", "/clientes",
+                params={"q": "11122"},
+                service="geogrid", settings=settings, region_name=region
+            )
+            print(resp)
+        except Exception as e:
+            print(f"Error: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

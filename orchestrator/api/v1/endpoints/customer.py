@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -90,23 +91,151 @@ async def sync_customer(
         except HTTPException as exc:
             if exc.status_code == 404:
                 logger.warning("Conexión %s no encontrada en ISP (404). Buscando en historial local...", payload.connection_id)
-                from orchestrator.core.state import LATEST_CUSTOMER_EVENTS
                 
-                target_customer_id = None
+                # Buscar en memoria y SQLite por connection_id
+                from orchestrator.core.state import LATEST_CUSTOMER_EVENTS
+                from orchestrator.persistence import persistence_store
+                
+                target_event = None
+                
+                # 1. Buscar en memoria
                 for evt in LATEST_CUSTOMER_EVENTS.values():
                     meta = evt.get("metadata", {})
                     if str(meta.get("connection_id")) == str(payload.connection_id):
-                        target_customer_id = evt.get("customer_id")
-                        break
+                        # Preferir eventos con customer_name o connection_code
+                        if meta.get("customer_name") or meta.get("connection_code"):
+                            target_event = evt
+                            break
+                        elif not target_event:
+                            target_event = evt
                 
-                if target_customer_id:
-                    logger.info("Recuperado Customer ID %s localmente. Ejecutando baja...", target_customer_id)
-                    decommission_req = DecommissionRequest(
-                        customer_id=target_customer_id,
-                        connection_code=payload.connection_code or "UNKNOWN",
-                        dry_run=False
-                    )
-                    return await decommission_customer(decommission_req, request, settings, state)
+                # 2. Si no está en memoria o no tiene datos completos, buscar en SQLite
+                if not target_event or (not target_event.get("metadata", {}).get("customer_name") and not target_event.get("metadata", {}).get("connection_code")):
+                    all_events = persistence_store.load_customer_events()
+                    for evt in all_events:
+                        meta = evt.get("metadata", {})
+                        if str(meta.get("connection_id")) == str(payload.connection_id):
+                            # Preferir eventos con datos completos
+                            if meta.get("customer_name") or meta.get("connection_code"):
+                                target_event = evt
+                                break
+                            elif not target_event:
+                                target_event = evt
+                
+                if target_event:
+                    customer_name = target_event.get("metadata", {}).get("customer_name") or target_event.get("customer_name") or "Cliente"
+                    connection_code = target_event.get("metadata", {}).get("connection_code")
+                    
+                    logger.info("Recuperado cliente '%s' (conn=%s) del historial. Ejecutando marcado BAJA...", 
+                               customer_name, payload.connection_id)
+                    
+                    # Buscar el cliente en GeoGrid (intentar por código y por nombre)
+                    try:
+                        geogrid_cliente = None
+                        
+                        # 1. Intentar por connection_code
+                        if connection_code:
+                            geogrid_cliente = await geogrid_service.get_cliente_by_codigo(
+                                settings, connection_code, fetch_json
+                            )
+                        
+                        # 2. Intentar por connection_id como código
+                        if not geogrid_cliente and payload.connection_id:
+                            geogrid_cliente = await geogrid_service.get_cliente_by_codigo(
+                                settings, str(payload.connection_id), fetch_json
+                            )
+                        
+                        # 3. Intentar por nombre del cliente (búsqueda parcial)
+                        if not geogrid_cliente and customer_name and customer_name != "Cliente":
+                            # Buscar por nombre usando query general
+                            client_kwargs, region = settings.http_client_kwargs("geogrid")
+                            async with httpx.AsyncClient(**client_kwargs) as client:
+                                resp = await fetch_json(
+                                    client, "GET", "/clientes",
+                                    params={"q": customer_name},
+                                    service="geogrid", settings=settings, region_name=region
+                                )
+                                # Manejar estructura {"registros": [{"dados": {...}}]} o {"dados": [...]}
+                                if isinstance(resp, dict):
+                                    if "registros" in resp:
+                                        registros = resp.get("registros", [])
+                                        if isinstance(registros, list) and registros:
+                                            geogrid_cliente = registros[0].get("dados")
+                                            logger.info("Cliente encontrado por nombre (en registros): %s", customer_name)
+                                    elif "dados" in resp:
+                                        datos = resp.get("dados", [])
+                                        if isinstance(datos, list) and datos:
+                                            geogrid_cliente = datos[0]
+                                            logger.info("Cliente encontrado por nombre (en dados): %s", customer_name)
+                        
+                        # 4. Intentar búsqueda general por connection_id (si todo lo anterior fallo)
+                        if not geogrid_cliente and payload.connection_id:
+                            # Buscar por ID usando query general
+                            client_kwargs, region = settings.http_client_kwargs("geogrid")
+                            async with httpx.AsyncClient(**client_kwargs) as client:
+                                resp = await fetch_json(
+                                    client, "GET", "/clientes",
+                                    params={"q": str(payload.connection_id)},
+                                    service="geogrid", settings=settings, region_name=region
+                                )
+                                # Manejar estructura {"registros": [{"dados": {...}}]} o {"dados": [...]}
+                                if isinstance(resp, dict):
+                                    if "registros" in resp:
+                                        registros = resp.get("registros", [])
+                                        if isinstance(registros, list) and registros:
+                                            geogrid_cliente = registros[0].get("dados")
+                                            logger.info("Cliente encontrado por ID (en registros): %s", payload.connection_id)
+                                    elif "dados" in resp:
+                                        datos = resp.get("dados", [])
+                                        if isinstance(datos, list) and datos:
+                                            geogrid_cliente = datos[0]
+                                            logger.info("Cliente encontrado por ID (en dados): %s", payload.connection_id)
+                        
+                        if geogrid_cliente:
+                            geogrid_id = geogrid_cliente.get("id")
+                            geogrid_name = geogrid_cliente.get("nome") or geogrid_cliente.get("name") or customer_name
+                            
+                            # Validación de seguridad: verificar coincidencia de nombre o ID
+                            normalized_found = str(geogrid_name).upper()
+                            normalized_search = str(customer_name).upper()
+                            is_match = False
+                            
+                            if payload.connection_id and str(payload.connection_id) in normalized_found:
+                                is_match = True
+                            elif connection_code and str(connection_code) in normalized_found:
+                                is_match = True
+                            else:
+                                # Coincidencia parcial de palabras clave (min 4 letras)
+                                for word in normalized_search.replace("-", " ").split():
+                                    if len(word) >= 4 and word in normalized_found:
+                                        is_match = True
+                                        break
+                            
+                            if not is_match:
+                                logger.warning("SAFETY CHECK: Cliente encontrado '%s' no coincide suficientemente con buscado '%s' (ID=%s). Abortando renombre.", 
+                                              geogrid_name, customer_name, payload.connection_id)
+                            else:
+                                # Marcar como BAJA
+                                await geogrid_service.mark_cliente_as_baja(settings, geogrid_id, geogrid_name)
+                            
+                            # Registrar evento de baja
+                            register_customer_event(
+                                "baja",
+                                customer=target_event,
+                                source="sync",
+                                metadata={"action": "decommission_fallback", "connection_id": payload.connection_id},
+                            )
+                            
+                            return {
+                                "status": "decommissioned_from_history",
+                                "connection_id": payload.connection_id,
+                                "customer_name": f"BAJA - {geogrid_name}",
+                                "geogrid_id": geogrid_id,
+                            }
+                        else:
+                            logger.warning("Cliente no encontrado en GeoGrid para %s / %s", payload.connection_id, customer_name)
+                    except Exception as geogrid_exc:
+                        logger.warning("Error al marcar BAJA en GeoGrid: %s", geogrid_exc)
             
             # Si falla recuperación o es otro error
             raise
@@ -752,6 +881,12 @@ async def decommission_customer(
             )
             raise
         
+        # Marcar cliente como BAJA (renombrar con prefijo)
+        try:
+            current_name = geogrid_cliente.get("nome") or geogrid_cliente.get("name") or str(resolved_customer_id)
+            await geogrid_service.mark_cliente_as_baja(settings, geogrid_id, current_name)
+        except Exception as rename_exc:
+            logger.warning("No se pudo marcar cliente %s como BAJA: %s", geogrid_id, rename_exc)
         try:
             sigla_caja = extract_geogrid_box_sigla(customer)
             porta_num = extract_geogrid_port_number(customer)
