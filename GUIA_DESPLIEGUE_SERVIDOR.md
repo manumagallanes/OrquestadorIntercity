@@ -187,6 +187,33 @@ Al volver a iniciar, los contadores en Grafana comenzarán en **0**.
 ### Copias de Seguridad (Backup)
 Se recomienda hacer backup periódico del archivo `.env` y, opcionalmente, del volumen `orchestrator-data` si se desea conservar el histórico de incidentes a largo plazo.
 
+
+---
+
+## 🌐 6. Acceso Remoto en Red Local
+
+Una vez desplegado, el servidor actúa como un **nodo central** accesible por otros equipos de la empresa.
+
+### Obtener la IP del Servidor
+En la terminal del servidor (Linux), ejecute:
+```bash
+hostname -I
+# Ejemplo de salida: 192.168.1.50
+```
+
+### Links de Acceso para el Equipo
+Comparta los siguientes enlaces con los departamentos correspondientes (reemplace `<IP_SERVIDOR>` por la IP obtenida arriba):
+
+| Perfil | Herramienta | URL | Usuario/Pass |
+| :--- | :--- | :--- | :--- |
+| **Operaciones/Ventas** | Dashboard Operativo | `http://<IP_SERVIDOR>:8501` | *(Sin contraseña)* |
+| **Ingeniería/Técnica** | Métricas de Rendimiento | `http://<IP_SERVIDOR>:3000` | `admin` / `admin` |
+| **Desarrolladores** | Documentación API | `http://<IP_SERVIDOR>:8000/docs` | *(Sin contraseña)* |
+
+> **Solución de Problemas de Conexión:**
+> Si los equipos no pueden acceder, verifique el Firewall de Linux:
+> `sudo ufw allow 8501 && sudo ufw allow 3000 && sudo ufw allow 8000`
+
 ---
 
 **Soporte:**
