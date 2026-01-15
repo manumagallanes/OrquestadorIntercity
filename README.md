@@ -2,178 +2,120 @@
 
 **Trabajo Final de Prácticas Profesionales**
 
-Este repositorio alberga el código fuente y la documentación técnica del **Orquestador Intercity**, un middleware desarrollado para la automatización de procesos de aprovisionamiento y sincronización de red. El sistema actúa como puente lógico entre el Business Support System (BSS) **ISP-Cube** y el sistema de gestión geoespacial (GIS/OSS) **GeoGrid**.
+Este repositorio alberga el código fuente y la documentación técnica del **Orquestador Intercity**, un middleware ""Enterprise-Grade"" desarrollado para la automatización crítica de procesos de aprovisionamiento FTTH. El sistema actúa como puente lógico inteligente entre el Business Support System (BSS) **ISP-Cube** y el sistema de gestión geoespacial (GIS/OSS) **GeoGrid**.
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-El objetivo principal de este proyecto es reducir la carga operativa manual y minimizar errores en la gestión de altas y bajas de clientes FTTH. Para ello, el orquestador implementa una arquitectura orientada a eventos (poll-based) que detecta cambios en el sistema comercial y refleja automáticamente estos cambios en el inventario de red.
+El objetivo principal es eliminar la carga operativa manual y los errores humanos en la gestión de infraestructura de red. Mediante una arquitectura orientada a eventos, el sistema no solo sincroniza datos, sino que **asegura la integridad y calidad** de los mismos, aplicando reglas de negocio complejas y corrección automática de anomalías.
 
 **Funcionalidades Clave:**
-*   **Sincronización Automática:** Propagación de altas, bajas y modificaciones desde ISP-Cube hacia GeoGrid.
-*   **Aprovisionamiento Lógico:** Asignación automática de recursos de red (puertos PON) y documentación de la acometida (Drop) georreferenciada.
-*   **Validación de Datos:** Reglas de negocio estrictas para asegurar la integridad de la información (coordenadas, caja, puerto).
-*   **Observabilidad:** Sistema integrado de métricas (Prometheus) y visualización (Grafana) para el monitoreo de la salud del servicio y KPIs operativos.
+*   **Sincronización Inteligente:** Propagación bidireccional de altas y bajas (Decommissioning) con manejo de estados intermedios.
+*   **Aprovisionamiento Lógico Automatizado:** Asignación de puertos PON y documentación de acometidas (Drops) georreferenciadas.
+*   **Self-Healing de Datos:** 
+    *   Corrección automática de coordenadas malformadas (-33105847 → -33.105847).
+    *   Recuperación automática ante caídas de servicios externos (Circuit Breakers).
+    *   Refresco autónomo de tokens de autenticación vencidos.
+*   **Interfaz de Operación "Enterprise":** Dashboard profesional sobrio (Dark Mode) para monitoreo de incidentes y métricas de negocio en tiempo real.
 
 ---
 
 ## 2. Arquitectura del Sistema
 
-El proyecto ha evolucionado desde un script monolítico hacia una **arquitectura modular y escalable**, diseñada siguiendo principios de ingeniería de software robustos.
+El proyecto implementa una **arquitectura de microservicios contenerizada**, diseñada para alta disponibilidad y mantenibilidad.
 
-### 2.1 Estructura Modular
-El código se organiza en capas lógicas para facilitar el mantenimiento y la extensibilidad:
+### 2.1 Estructura Modular (Clean Architecture)
+El código sigue una estricta separación de responsabilidades:
+*   **`orchestrator.core`**: Infraestructura base, manejo de configuración y resiliencia HTTP.
+*   **`orchestrator.logic`**: Reglas de negocio puras, desacopladas de frameworks y transporte.
+*   **`orchestrator.services`**: Adaptadores para APIs externas (ISP-Cube, GeoGrid).
+*   **`orchestrator.api`**: Capa de presentación REST (FastAPI).
 
-*   **`orchestrator.core`**: Infraestructura base. Manejo de configuración, estado global, logging y clientes HTTP resilientes (con patrones de Retry y Circuit Breaker).
-*   **`orchestrator.logic`**: Lógica de negocio pura. Contiene las reglas de validación de clientes, resolución de coordenadas, lógica de reconciliación y reportes.
-*   **`orchestrator.services`**: Capa de abstracción para comunicaciones externas. Módulos dedicados para interactuar con las APIs de ISP-Cube y GeoGrid.
-*   **`orchestrator.api`**: Controladores REST (FastAPI). Expone endpoints para operaciones síncronas, consultas de métricas y hooks de gestión.
-*   **`orchestrator.schemas`**: Definiciones de datos (Pydantic) para garantizar contratos de interfaz estrictos.
-
-### 2.2 Componentes de Despliegue
-La solución se despliega mediante **Docker Compose**, orquestando los siguientes contenedores:
-
+### 2.2 Componentes de Despliegue (Docker Compose)
 | Servicio | Rol | Descripción |
 | :--- | :--- | :--- |
-| **`orchestrator`** | Núcleo | Aplicación FastAPI (Python) que ejecuta la lógica de negocio. |
-| **`prometheus`** | Monitoreo | Recolector de series temporales para métricas de rendimiento y negocio. |
-| **`grafana`**  | Visualización | Dashboards para la visualización de incidentes, tasas de sincronización y estado del sistema. |
-| **`ui`**      | Interfaz | Herramienta auxiliar (Streamlit) para pruebas manuales y consultas rápidas. |
+| **`orchestrator`** | Backend | Núcleo de lógica de negocio (FastAPI, Python 3.11). |
+| **`scheduler`** | Cron Jobs | Ejecutor de tareas asíncronas (Polling, Reintentos, Limpieza). |
+| **`ui`** | Frontend | Panel de control profesional (Streamlit) para visualización de estado. |
+| **`prometheus`** | Métricas | Recolector de series temporales. |
+| **`grafana`**  | Dashboards | Visualización avanzada de KPIs técnicos. |
 
 ---
 
-## 3. Flujo de Información
+## 3. Flujo de Información y Resiliencia
 
-El sistema opera bajo un modelo de **consumidor inteligente**:
+El sistema opera bajo un modelo de **consumidor inteligente** con capacidad de autosanación:
 
-1.  **Detección:** Un proceso de sondeo (*polling*) consulta periódicamente los logs de aprovisionamiento de ISP-Cube.
-2.  **Procesamiento:** El orquestador recibe la novedad (alta/baja) y aplica validaciones:
-    *   ¿El cliente tiene coordenadas válidas?
-    *   ¿La caja y puerto asignados existen en el inventario?
-3.  **Ejecución:**
-    *   **En GeoGrid:** Se crea/actualiza el cliente, se genera la "casita" (punto de acceso) y se documenta el cable de bajada (Drop) conectado al puerto específico.
-4.  **Auditoría:** Cada acción genera un registro de auditoría. Si ocurre un error (ej. datos inconsistentes), se registra un **Incidente** para su corrección manual posterior.
-
-### Diagrama de Arquitectura
-
-### Diagrama de Flujo Simplificado
+1.  **Detección:** El *Scheduler* consulta periódicamente ISP-Cube. Si el token expiró, **se auto-renueva** sin intervención, garantizando continuidad operativa.
+2.  **Validación & Corrección (Sanitización):** 
+    *   Antes de procesar, se validan los datos geográficos.
+    *   Si se detectan coordenadas fuera de rango (ej. error de tipado o formato entero), el sistema aplica heurísticas matemáticas para **normalizarlas automáticamente**.
+3.  **Ejecución Transaccional:**
+    *   Se impacta en GeoGrid solo si todas las precondiciones se cumplen.
+    *   En caso de fallo técnico (timeout), se encola para **reintento exponencial**.
+    *   En caso de fallo de negocio (datos inválidos), se genera un **Incidente** visible en la UI.
 
 ```mermaid
 graph LR
-    %% Flujo lineal con terminología técnica
-    ISP["ISP-Cube<br/>(CRM Comercial)"] -->|Nuevas Altas| SCH(Detector Automático)
-    SCH -->|Procesa| ORCH["Orquestador<br/>(Middleware)"]
+    ISP["ISP-Cube<br/>(CRM)"] -->|Polling| SCH(Scheduler)
+    SCH -->|Token Expired?| AUTH[Auto-Auth]
+    SCH -->|Data| ORCH["Orquestador"]
     
-    ORCH -->|1. Valida| DB[(Estado Interno)]
-    ORCH -->|2. Provisiona| GEO["GeoGrid<br/>(GIS Técnico)"]
+    ORCH -->|1. Sanitiza| LOGIC{¿Datos Válidos?}
+    LOGIC -->|No| FIX[Heurística de Corrección]
+    FIX --> LOGIC
+    LOGIC -->|Sí| GEO["GeoGrid<br/>(GIS)"]
     
-    ORCH -.->|3. Métricas| GRAF["Grafana<br/>(Monitoreo KPIs)"]
-
-    %% Estilos visuales (Colores suaves)
-    style ISP fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style GEO fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style ORCH fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    style GRAF fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    ORCH -.->|Alerta| UI["Dashboard Corporativo"]
+    
+    style ISP fill:#e3f2fd,stroke:#1565c0
+    style GEO fill:#e3f2fd,stroke:#1565c0
+    style ORCH fill:#fff3e0,stroke:#ef6c00
+    style UI fill:#263238,stroke:#eceff1,color:#fff
 ```
 
-**Leyenda de Colores:**
-| Color | Significado |
-|-------|-------------|
-| 🔵 Azul | Sistemas externos (APIs de terceros) |
-| 🟠 Naranja | Orquestador (desarrollo propio) |
-| 🟢 Verde | Monitoreo y observabilidad |
+---
 
-> **Nota Técnica:** El orquestador no inventaria la red ni crea elementos pasivos (Cajas, Splitters) por sí mismo; consume la infraestructura ya documentada en GeoGrid para asignar clientes a recursos existentes.
+## 4. Estándares de Ingeniería
 
-### 3.1 Integración de APIs Externas
-La lógica de orquestación se construyó basándose estrictamente en las especificaciones de interfaz (contratos) de los proveedores:
-*   **ISP-Cube API (v1):** Utilizada para la extracción de logs (`/connections/connections_provisioning_logs`) y autenticación basada en Tokens temporales.
-*   **GeoGrid API (v3):** Utilizada para la manipulación topológica de la red. Se implementaron algoritmos para determinar la caja más cercana y conectar el "Drop" virtualmente.
+Para garantizar la robustez necesaria en un entorno crítico de telecomunicaciones:
+
+*   **Clean Code:** Tipado estático estricto (Type Hints), Pydantic para validación de contratos y manejo de excepciones granular.
+*   **Observabilidad Completa:** Cada transacción genera logs estructurados, trazas de auditoría y métricas Prometheus.
+*   **Seguridad:** Manejo de secretos vía variables de entorno (`.env`), sin credenciales hardcodeadas.
+*   **UI Profesional:** Interfaz diseñada con principios de **Minimalismo Corporativo** (Inter font, Paleta Dark Enterprise), optimizada para operadores de NOC.
 
 ---
 
-## 4. Conceptos de Ingeniería Aplicados
+## 5. Instalación y Puesta en Marcha
 
-Para garantizar la robustez necesaria en un entorno crítico de telecomunicaciones, se aplicaron los siguientes patrones de diseño y estrategias:
+El sistema es **agnóstico del entorno** y listo para despliegue ("Portable").
 
-### 4.1 Patrones de Arquitectura
-*   **Clean Architecture (Capas):** Separación estricta entre la lógica de dominio (`logic/`), los adaptadores de servicios externos (`services/`) y la capa de exposición (`api/`). Esto desacopla el negocio de la tecnología de transporte.
-*   **Event-Driven (Pull-Based):** En lugar de acoplamiento fuerte síncrono, el sistema reacciona a eventos asíncronos consultados periódicamente, lo que reduce el impacto en el rendimiento de los sistemas BSS/OSS.
+### 5.1 Requisitos
+*   Docker & Docker Compose.
+*   Credenciales válidas de los sistemas externos.
 
-### 4.2 Resiliencia y Fiabilidad
-*   **Retry Pattern & Exponential Backoff:** Las comunicaciones HTTP inestables se manejan mediante librerías como `tenacity` y lógica propia en los scripts de *polling*, reintentando operaciones fallidas con tiempos de espera crecientes.
-*   **Auto-Healing (Autosanación):** El script `retry_incidents.py` actúa como un agente de recuperación, monitoreando fallos transitorios (ej. "GeoGrid inalcanzable") y reintentándolos automáticamente sin intervención humana.
-*   **Idempotencia:** El diseño garantiza que procesar el mismo evento de cliente múltiples veces tenga el mismo resultado y no genere duplicados en el inventario.
-
-### 4.3 Tecnologías Clave (Python Moderno)
-*   **Type Hinting & Pydantic:** Uso extensivo de tipado estático y validación de esquemas en tiempo de ejecución para prevenir errores de tipo comunes en lenguajes dinámicos.
-*   **Asincronía (AsyncIO):** Preparado para alta concurrencia en I/O bound tasks utilizando FastAPI y servidores ASGI.
-*   **Persistencia Ligera:** Uso de SQLite para mantener un estado local robusto de métricas y cursores, evitando la complejidad de mantener una base de datos externa pesada (Postgres/MySQL) para esta escala.
-
----
-
-## 5. Requisitos Previos
-
-Para ejecutar este proyecto en un entorno local o productivo, se requiere:
-
-*   **Docker & Docker Compose**: Para la contenerización de los servicios.
-*   **Acceso a APIs**: Credenciales válidas para ISP-Cube (Token/Usuario) y GeoGrid (API Key).
-*   **Python 3.10+** (Opcional, solo para desarrollo/tests locales fuera de Docker).
-
----
-
-## 6. Instalación y Puesta en Marcha
-
-### 6.1 Configuración de Entorno
+### 5.2 Despliegue Rápido
 1.  Clonar el repositorio.
-2.  Crear un archivo `.env` basado en `.env.example`.
-3.  Configurar las URLs y credenciales de los servicios externos en `config/environments/dev.json` (o el entorno correspondiente).
+2.  Copiar `.env.example` a `.env` y configurar credenciales.
+3.  Iniciar:
+    ```bash
+    docker compose up --build -d
+    ```
 
-**Importante:** La versión actual **no utiliza mocks**. Requiere conexión real a los servicios o configuración adecuada de stubs externos si se desea simular tráfico.
-
-### 6.2 Ejecución
-Iniciar todos los servicios:
-
-```bash
-docker-compose up --build -d
-```
-
-### 6.3 Verificación
+### 5.3 Accesos
+*   **Dashboard Operativo:** [http://localhost:8501](http://localhost:8501)
 *   **API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
-*   **Estado de Salud:** [http://localhost:8000/health](http://localhost:8000/health)
-*   **Dashboards:** [http://localhost:3000](http://localhost:3000) (Credenciales: admin/admin)
+*   **Métricas Gráficas:** [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 7. Pruebas Automatizadas
+## 6. Autoría
 
-Como parte de la ingeniería de calidad del software, se ha incluido una suite de pruebas automatizadas (unitarias e integración) que validan la lógica de dominio y la integridad de los endpoints.
-
-Para ejecutar las pruebas:
-
-```bash
-# Instalar dependencias de prueba
-pip install -r requirements.txt
-
-# Ejecutar suite de pruebas con pytest
-python -m pytest tests
-```
+**Proyecto de Ingeniería de Software Avanzada**
+Desarrollado como parte de las Prácticas Profesionales de **Manuel Magallanes**.
+*Ingeniería en Telecomunicaciones*
 
 ---
-
-## 8. Scripts de Mantenimiento
-
-Se incluyen scripts en `scripts/` para tareas operativas recurrentes:
-
-*   `poll_isp_connections.py`: Ejecución manual o programada (Cron) del ciclo de detección de cambios.
-*   `replay_provisioning.py`: Herramienta para reprocesar eventos pasados (reconciliación) sin afectar el cursor principal.
-*   `retry_incidents.py`: Reintento automático de sincronizaciones fallidas por errores transitorios.
-
----
-
-## 9. Licencia y Autoría
-
-Este proyecto forma parte de las prácticas profesionales de **Manuel Magallanes** para la carrera de Ingeniería en Telecomunicaciones.
-
-**Licencia:** Ver archivo `LICENSE`.
+*© 2026 Intercity Telecomunicaciones - Todos los derechos reservados.*

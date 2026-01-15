@@ -356,6 +356,24 @@ def ensure_customer_ready(
             )
 
     if lat is not None and lon is not None:
+        # Heurística de corrección de coordenadas (ej: -33105847 -> -33.105847)
+        def _try_fix_coordinate(val: float, min_val: float, max_val: float) -> float:
+            # Si ya está en rango, devolver
+            if min_val <= val <= max_val:
+                return val
+            # Intentar dividir por potencias de 10 (hasta 10^7)
+            current = val
+            for _ in range(7):
+                if abs(current) < 1:  # Si se vuelve muy chico, parar
+                    break
+                current /= 10.0
+                if min_val <= current <= max_val:
+                    return current
+            return val
+
+        lat = _try_fix_coordinate(lat, CORDOBA_LAT_RANGE[0], CORDOBA_LAT_RANGE[1])
+        lon = _try_fix_coordinate(lon, CORDOBA_LON_RANGE[0], CORDOBA_LON_RANGE[1])
+
         if not (
             CORDOBA_LAT_RANGE[0] <= lat <= CORDOBA_LAT_RANGE[1]
             and CORDOBA_LON_RANGE[0] <= lon <= CORDOBA_LON_RANGE[1]
