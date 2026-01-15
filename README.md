@@ -25,7 +25,12 @@ El **Orquestador Intercity** actúa como un middleware inteligente que automatiz
 **Impacto Transversal en la Organización:**
 *   **Para Administración/Facturación:** Garantiza que cada cliente dado de alta tenga inmediatamente su contraparte técnica asignada, asegurando la trazabilidad del servicio facturable.
 *   **Para Ingeniería/Técnica:** Elimina la carga de documentación manual. El sistema asigna automáticamente puertos PON libres, valida factibilidad técnica (cobertura) y documenta la acometida (Drop) con precisión geográfica.
-*   **Para la Gerencia:** Proporciona un "tablero de control" unificado, visibilizando en tiempo real la eficiencia operativa y detectando anomalías (ej. clientes activos sin documentación técnica).
+
+### 1.3 Optimización de Planta Externa (Eficiencia Operativa)
+Más allá de la sincronización administrativa, el proyecto impacta directamente en la eficiencia del trabajo de campo:
+*   **Gestión de Capacidad en Tiempo Real:** Al mantener GeoGrid estrictamente actualizado, el sistema permite visualizar qué cajas NAP (Network Access Point) tienen puertos disponibles y cuáles están saturadas.
+*   **Reducción de Tiempos Muertos:** Evita que una cuadrilla técnica se desplace al domicilio del cliente y pierda tiempo valioso buscando viabilidad técnica en cajas saturadas. La pre-asignación inteligente garantiza que la orden de trabajo sea ejecutable.
+*   **Trazabilidad de Última Milla:** Permite conocer exactamente qué cliente está conectado a qué puerto físico, facilitando diagnósticos rápidos ante cortes masivos y optimizando el mantenimiento preventivo.
 
 ---
 
@@ -47,7 +52,16 @@ El sistema no es un simple "pasa-amanos" de datos; actúa como un **filtro de ca
 
 ### 2.3 Concurrencia y Performance (AsyncIO)
 Dado que la naturaleza del orquestador es **I/O Bound** (esperar respuestas de APIs externas), se utilizó **Python AsyncIO** (con FastAPI y HTTPX).
-*   Esto permite manejar múltiples solicitudes de sincronización en paralelo sin bloquear el hilo principal de ejecución, optimizando drásticamente el uso de CPU y memoria en comparación con modelos sincrónicos tradicionales.
+
+### 2.4 Consistencia Eventual (Eventual Consistency)
+En sistemas distribuidos donde no es posible aplicar transacciones ACID globales (debido a la independencia de las APIs de terceros), el orquestador adopta un modelo de **consistencia eventual**.
+*   El sistema acepta que puede haber un desfasaje temporal breve entre el CRM y el GIS.
+*   Sin embargo, garantiza que el sistema **convergerá** inevitablemente a un estado consistente. Si una actualización falla, los mecanismos de reintento y los procesos de reconciliación periódica ("Sweep") aseguran que la discrepancia se resuelva automáticamente, eliminando la necesidad de "arreglos manuales de base de datos".
+
+### 2.5 Inversión de Dependencias (SOLID - DIP)
+El diseño arquitectónico desacopla la lógica de negocio de la tecnología subyacente.
+*   El núcleo del orquestador no "conoce" a ISP-Cube ni a GeoGrid directamente; interactúa a través de interfaces abstractas.
+*   **Valor Estratégico:** Esto protege la inversión de software de la empresa. Si el día de mañana se decide cambiar el CRM por otro proveedor (ej. Odoo, Salesforce), **no es necesario tirar el orquestador a la basura**; solo se reemplaza el "adaptador" de conexión, conservando toda la inteligencia de negocio desarrollada.
 
 ---
 
@@ -83,6 +97,51 @@ Se adoptó una arquitectura de **Microservicios** basada en **Clean Architecture
     *   Si los datos son válidos → Se ejecuta la orden en el GIS.
     *   Si los datos son inválidos (ej. fuera de zona) → Se genera un **Incidente** registrado en base de datos.
     *   Los operadores pueden ver estos incidentes en el Dashboard Web y corregirlos en el CRM, tras lo cual el orquestador los reprocesará automáticamente.
+
+### Diagrama de Secuencia: Ciclo de Alta
+
+El siguiente diagrama detalla la interacción técnica entre componentes durante un ciclo típico de detección y aprovisionamiento:
+
+```mermaid
+sequenceDiagram
+    participant CRM as ISP-Cube (CRM)
+    participant SCH as Scheduler
+    participant ORCH as Orquestador (Core)
+    participant GIS as GeoGrid (OSS)
+    participant DB as Auditoría (DB)
+
+    Note over CRM, DB: Ciclo de Sincronización Automática
+
+    SCH->>CRM: 1. Polling: ¿Nuevos Logs? (Auth Tkn)
+    activate CRM
+    CRM-->>SCH: Lista de Eventos (JSON)
+    deactivate CRM
+
+    loop Por cada Evento Detectado
+        SCH->>ORCH: 2. Procesar Alta/Baja
+        activate ORCH
+        
+        ORCH->>ORCH: 3. Sanitización de Datos (Heurística)
+        
+        alt Datos Inválidos (ej. Coordenadas Error)
+            ORCH->>DB: Registrar Incidente (Requiere Intervención)
+        else Datos Válidos
+            ORCH->>GIS: 4. Consultar Factibilidad de Red
+            activate GIS
+            GIS-->>ORCH: Estado de Caja/Puerto
+            deactivate GIS
+
+            alt Sin Capacidad / Error
+                ORCH->>DB: Registrar Incidente Técnico
+            else Viable
+                ORCH->>GIS: 5. Ejecutar Aprovisionamiento (Drop)
+                GIS-->>ORCH: Confirmación (ID GIS)
+                ORCH->>DB: 6. Cerrar Auditoría Exitosa
+            end
+        end
+        deactivate ORCH
+    end
+```
 
 ---
 
