@@ -1,121 +1,99 @@
-# Orquestador Intercity – Ingeniería en Telecomunicaciones
+# Orquestador de Aprovisionamiento FTTH - Intercity Telecomunicaciones
 
-**Trabajo Final de Prácticas Profesionales**
-
-Este repositorio alberga el código fuente y la documentación técnica del **Orquestador Intercity**, un middleware ""Enterprise-Grade"" desarrollado para la automatización crítica de procesos de aprovisionamiento FTTH. El sistema actúa como puente lógico inteligente entre el Business Support System (BSS) **ISP-Cube** y el sistema de gestión geoespacial (GIS/OSS) **GeoGrid**.
-
----
-
-## 1. Resumen Ejecutivo
-
-El objetivo principal es eliminar la carga operativa manual y los errores humanos en la gestión de infraestructura de red. Mediante una arquitectura orientada a eventos, el sistema no solo sincroniza datos, sino que **asegura la integridad y calidad** de los mismos, aplicando reglas de negocio complejas y corrección automática de anomalías.
-
-**Funcionalidades Clave:**
-*   **Sincronización Inteligente:** Propagación bidireccional de altas y bajas (Decommissioning) con manejo de estados intermedios.
-*   **Aprovisionamiento Lógico Automatizado:** Asignación de puertos PON y documentación de acometidas (Drops) georreferenciadas.
-*   **Self-Healing de Datos:** 
-    *   Corrección automática de coordenadas malformadas (-33105847 → -33.105847).
-    *   Recuperación automática ante caídas de servicios externos (Circuit Breakers).
-    *   Refresco autónomo de tokens de autenticación vencidos.
-*   **Interfaz de Operación "Enterprise":** Dashboard profesional sobrio (Dark Mode) para monitoreo de incidentes y métricas de negocio en tiempo real.
+**Informe Técnico y Documentación de Proyecto**
+*Prácticas Profesionales Supervisadas - Ingeniería en Telecomunicaciones*
 
 ---
 
-## 2. Arquitectura del Sistema
+## 1. Introducción y Valor de Negocio
 
-El proyecto implementa una **arquitectura de microservicios contenerizada**, diseñada para alta disponibilidad y mantenibilidad.
+Este proyecto surge de la necesidad crítica de **integrar los dos pilares operativos** de un proveedor de servicios de internet (ISP): el área **Administrativa/Comercial** y el área **Técnica/Ingeniería**.
 
-### 2.1 Estructura Modular (Clean Architecture)
-El código sigue una estricta separación de responsabilidades:
-*   **`orchestrator.core`**: Infraestructura base, manejo de configuración y resiliencia HTTP.
-*   **`orchestrator.logic`**: Reglas de negocio puras, desacopladas de frameworks y transporte.
-*   **`orchestrator.services`**: Adaptadores para APIs externas (ISP-Cube, GeoGrid).
-*   **`orchestrator.api`**: Capa de presentación REST (FastAPI).
+### 1.1 Problemática Original
+Tradicionalmente, la gestión de altas de clientes implicaba procesos manuales desconectados:
+1.  **Ventas/Admin** cargaba el cliente en el CRM (ISP-Cube) para facturación.
+2.  **Técnica** debía recibir una orden manual, ir al sitio, y luego cargar manualmente la documentación de red en el GIS (GeoGrid).
 
-### 2.2 Componentes de Despliegue (Docker Compose)
-| Servicio | Rol | Descripción |
-| :--- | :--- | :--- |
-| **`orchestrator`** | Backend | Núcleo de lógica de negocio (FastAPI, Python 3.11). |
-| **`scheduler`** | Cron Jobs | Ejecutor de tareas asíncronas (Polling, Reintentos, Limpieza). |
-| **`ui`** | Frontend | Panel de control profesional (Streamlit) para visualización de estado. |
-| **`prometheus`** | Métricas | Recolector de series temporales. |
-| **`grafana`**  | Dashboards | Visualización avanzada de KPIs técnicos. |
+Esta desconexión generaba:
+*   **Inconsistencia de Datos:** Diferencias entre lo que se factura y lo que está instalado realmente.
+*   **Errores Humanos:** Asignación incorrecta de puertos o cajas, coordenadas erróneas.
+*   **Retrasos Operativos:** Dependencia de la intervención humana para "mover los papeles".
 
----
+### 1.2 Solución Implementada
+El **Orquestador Intercity** actúa como un middleware inteligente que automatiza el ciclo de vida del aprovisionamiento.
 
-## 3. Flujo de Información y Resiliencia
-
-El sistema opera bajo un modelo de **consumidor inteligente** con capacidad de autosanación:
-
-1.  **Detección:** El *Scheduler* consulta periódicamente ISP-Cube. Si el token expiró, **se auto-renueva** sin intervención, garantizando continuidad operativa.
-2.  **Validación & Corrección (Sanitización):** 
-    *   Antes de procesar, se validan los datos geográficos.
-    *   Si se detectan coordenadas fuera de rango (ej. error de tipado o formato entero), el sistema aplica heurísticas matemáticas para **normalizarlas automáticamente**.
-3.  **Ejecución Transaccional:**
-    *   Se impacta en GeoGrid solo si todas las precondiciones se cumplen.
-    *   En caso de fallo técnico (timeout), se encola para **reintento exponencial**.
-    *   En caso de fallo de negocio (datos inválidos), se genera un **Incidente** visible en la UI.
-
-```mermaid
-graph LR
-    ISP["ISP-Cube<br/>(CRM)"] -->|Polling| SCH(Scheduler)
-    SCH -->|Token Expired?| AUTH[Auto-Auth]
-    SCH -->|Data| ORCH["Orquestador"]
-    
-    ORCH -->|1. Sanitiza| LOGIC{¿Datos Válidos?}
-    LOGIC -->|No| FIX[Heurística de Corrección]
-    FIX --> LOGIC
-    LOGIC -->|Sí| GEO["GeoGrid<br/>(GIS)"]
-    
-    ORCH -.->|Alerta| UI["Dashboard Corporativo"]
-    
-    style ISP fill:#e3f2fd,stroke:#1565c0
-    style GEO fill:#e3f2fd,stroke:#1565c0
-    style ORCH fill:#fff3e0,stroke:#ef6c00
-    style UI fill:#263238,stroke:#eceff1,color:#fff
-```
+**Impacto Transversal en la Organización:**
+*   **Para Administración/Facturación:** Garantiza que cada cliente dado de alta tenga inmediatamente su contraparte técnica asignada, asegurando la trazabilidad del servicio facturable.
+*   **Para Ingeniería/Técnica:** Elimina la carga de documentación manual. El sistema asigna automáticamente puertos PON libres, valida factibilidad técnica (cobertura) y documenta la acometida (Drop) con precisión geográfica.
+*   **Para la Gerencia:** Proporciona un "tablero de control" unificado, visibilizando en tiempo real la eficiencia operativa y detectando anomalías (ej. clientes activos sin documentación técnica).
 
 ---
 
-## 4. Estándares de Ingeniería
+## 2. Conceptos de Ingeniería Aplicados
 
-Para garantizar la robustez necesaria en un entorno crítico de telecomunicaciones:
+El desarrollo se fundamenta en principios sólidos de ingeniería de software y sistemas distribuidos, priorizando la **robustez** sobre la velocidad de implementación.
 
-*   **Clean Code:** Tipado estático estricto (Type Hints), Pydantic para validación de contratos y manejo de excepciones granular.
-*   **Observabilidad Completa:** Cada transacción genera logs estructurados, trazas de auditoría y métricas Prometheus.
-*   **Seguridad:** Manejo de secretos vía variables de entorno (`.env`), sin credenciales hardcodeadas.
-*   **UI Profesional:** Interfaz diseñada con principios de **Minimalismo Corporativo** (Inter font, Paleta Dark Enterprise), optimizada para operadores de NOC.
+### 2.1 Resiliencia y Fallos (Fault Tolerance)
+En telecomunicaciones, los sistemas no pueden detenerse por fallos externos. Se implementaron patrones específicos:
+*   **Circuit Breakers:** Si un servicio externo (GeoGrid) no responde, el sistema "abre el circuito" para evitar saturarlo y acumular errores, reintentando paulatinamente.
+*   **Exponential Backoff:** Ante fallos transitorios (Network Glitch), los reintentos se espacian exponencialmente en el tiempo (1s, 2s, 4s, 8s...), optimizando el uso de recursos.
+*   **Auto-Healing (Autosanación):** El sistema es capaz de detectar tokens de sesión expirados y renovarlos automáticamente sin detener el flujo de trabajo.
 
----
+### 2.2 Integridad de Datos (Data Quality)
+El sistema no es un simple "pasa-amanos" de datos; actúa como un **filtro de calidad**.
+*   **Sanitización Heurística:** Implementación de algoritmos matemáticos para corregir errores de entrada comunes (ej. transformar coordenadas enteras `-3310555` a decimales `-33.10555` automáticamente).
+*   **Validación de Tipos Estricta:** Uso de **Pydantic** para garantizar que los datos cumplan contratos estrictos antes de procesarlos.
+*   **Idempotencia:** Garantía de que procesar el mismo evento (alta de cliente) múltiples veces produce el mismo resultado consistente, evitando duplicados en la base de datos de red.
 
-## 5. Instalación y Puesta en Marcha
-
-El sistema es **agnóstico del entorno** y listo para despliegue ("Portable").
-
-### 5.1 Requisitos
-*   Docker & Docker Compose.
-*   Credenciales válidas de los sistemas externos.
-
-### 5.2 Despliegue Rápido
-1.  Clonar el repositorio.
-2.  Copiar `.env.example` a `.env` y configurar credenciales.
-3.  Iniciar:
-    ```bash
-    docker compose up --build -d
-    ```
-
-### 5.3 Accesos
-*   **Dashboard Operativo:** [http://localhost:8501](http://localhost:8501)
-*   **API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
-*   **Métricas Gráficas:** [http://localhost:3000](http://localhost:3000)
+### 2.3 Concurrencia y Performance (AsyncIO)
+Dado que la naturaleza del orquestador es **I/O Bound** (esperar respuestas de APIs externas), se utilizó **Python AsyncIO** (con FastAPI y HTTPX).
+*   Esto permite manejar múltiples solicitudes de sincronización en paralelo sin bloquear el hilo principal de ejecución, optimizando drásticamente el uso de CPU y memoria en comparación con modelos sincrónicos tradicionales.
 
 ---
 
-## 6. Autoría
+## 3. Arquitectura del Sistema
 
-**Proyecto de Ingeniería de Software Avanzada**
-Desarrollado como parte de las Prácticas Profesionales de **Manuel Magallanes**.
-*Ingeniería en Telecomunicaciones*
+Se adoptó una arquitectura de **Microservicios** basada en **Clean Architecture**, desacoplando la lógica de negocio de la infraestructura.
+
+### 3.1 Estructura de Capas
+1.  **Capa de Dominio (`/logic`):** Contiene las reglas puras del negocio (ej. "¿Cómo sé si un puerto es válido?", "¿Cuándo se considera un cliente 'en zona'?"). No depende de ninguna librería externa.
+2.  **Capa de Servicios (`/services`):** Adaptadores que saben "hablar" con el mundo exterior (APIs de ISP-Cube y GeoGrid). Traducen los datos externos al lenguaje del dominio interno.
+3.  **Capa de Infraestructura (`/core`):** Configuración, manejo de base de datos (SQLite), logging y utilidades de bajo nivel.
+
+### 3.2 Stack Tecnológico
+*   **Lenguaje:** Python 3.11 (Tipado, Async).
+*   **Contenerización:** Docker & Docker Compose (Portabilidad total).
+*   **Frontend:** Streamlit (Panel de operación sobrio y eficiente).
+*   **Observabilidad:** Prometheus (Métricas) + Grafana (Visualización).
 
 ---
-*© 2026 Intercity Telecomunicaciones - Todos los derechos reservados.*
+
+## 4. Flujo de Trabajo Automatizado
+
+1.  **Detección (Polling Inteligente):**
+    Un proceso cronometrado consulta los logs de auditoría del CRM. A diferencia de un Webhook pasivo, este método activo nos da control sobre la tasa de procesamiento y permite "rebobinar" la historia si es necesario.
+
+2.  **Reconciliación de Datos:**
+    Al detectar un alta/baja, el orquestador:
+    *   Recupera el estado actual del cliente técnico en GeoGrid.
+    *   Compara con la "verdad" comercial de ISP-Cube.
+    *   Calcula el "delta" (diferencia) necesario para alinear ambos sistemas.
+
+3.  **Ejecución y Feedback:**
+    *   Si los datos son válidos → Se ejecuta la orden en el GIS.
+    *   Si los datos son inválidos (ej. fuera de zona) → Se genera un **Incidente** registrado en base de datos.
+    *   Los operadores pueden ver estos incidentes en el Dashboard Web y corregirlos en el CRM, tras lo cual el orquestador los reprocesará automáticamente.
+
+---
+
+## 5. Conclusión para el Informe de PPS
+
+Este proyecto demuestra la aplicación práctica de competencias clave de la ingeniería:
+*   **Integración de Sistemas Heterogéneos** (CRM vs GIS).
+*   **Automatización de Procesos Críticos**.
+*   **Diseño de Software Robusto y Escalable**.
+
+El resultado es una herramienta que transforma la operación de Intercity, pasando de una gestión reactiva y manual a una **gestión proactiva, automatizada y basada en datos fiables**.
+
+---
+*Autor: Manuel Magallanes*
