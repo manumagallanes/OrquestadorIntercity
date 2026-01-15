@@ -58,13 +58,26 @@ router = APIRouter()
 @router.post(
     "/sync/customer",
     status_code=status.HTTP_200_OK,
-    summary="Sync customer data into GeoGrid",
+    summary="Sincronizar Cliente (IMS/CRM -> GeoGrid)",
+    response_description="Resultado de la sincronización con IDs de GeoGrid.",
 )
 async def sync_customer(
     payload: CustomerSyncRequest,
     request: Request,
     settings: EnvConfig = Depends(get_settings),
 ) -> Dict[str, Any]:
+    """
+    **Sincroniza un cliente desde el sistema comercial (ISP-Cube) hacia el sistema técnico (GeoGrid).**
+
+    Flujo de ejecución:
+    1.  **Recupera** los datos del cliente desde ISP-Cube usando el ID provisto.
+    2.  **Valida** la integridad de los datos (coordenadas, plan, estado).
+    3.  **Sanitiza** coordenadas geográficas si es necesario (Self-Healing).
+    4.  **Busca/Crea** el cliente en GeoGrid.
+    5.  Si corresponde, **Asigna** el puerto automático (Attend).
+
+    En caso de error (ej. GeoGrid caído), el sistema registra un incidente pero no bloquea futuras operaciones.
+    """
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     resolved_customer_id: Optional[int] = payload.customer_id
@@ -623,7 +636,8 @@ async def geogrid_attend(
 @router.post(
     "/provision/onu",
     status_code=status.HTTP_200_OK,
-    summary="Asignar un cliente a una puerta en GeoGrid",
+    summary="Asignar Puerto/ONU (Aprovisionamiento Lógico)",
+    response_description="Detalles de la asignación en GeoGrid.",
 )
 async def provision_onu(
     payload: ProvisionRequest,
@@ -631,6 +645,16 @@ async def provision_onu(
     settings: EnvConfig = Depends(get_settings),
     state: RuntimeState = Depends(get_runtime_state),
 ) -> Dict[str, Any]:
+    """
+    **Realiza la asignación lógica de una ONU a un puerto en la red FTTH.**
+
+    Este endpoint conecta "la fibra virtual":
+    *   Verifica que la OLT, Tarjeta (Board) y Puerto PON existan.
+    *   Asocia el Serial Number (SN) de la ONU al cliente en GeoGrid.
+    *   Registra la observación con el usuario responsable y timestamp.
+    
+    Admite modo `dry_run=True` para simular la asignación sin impactar en inventario.
+    """
     user = request.headers.get(APP_USER_HEADER, "ui")
     timestamp = datetime.now(timezone.utc).isoformat()
     dry_run_flag = payload.dry_run if payload.dry_run is not None else state.dry_run
