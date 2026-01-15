@@ -98,50 +98,37 @@ Se adoptó una arquitectura de **Microservicios** basada en **Clean Architecture
     *   Si los datos son inválidos (ej. fuera de zona) → Se genera un **Incidente** registrado en base de datos.
     *   Los operadores pueden ver estos incidentes en el Dashboard Web y corregirlos en el CRM, tras lo cual el orquestador los reprocesará automáticamente.
 
-### Diagrama de Secuencia: Ciclo de Alta
 
-El siguiente diagrama detalla la interacción técnica entre componentes durante un ciclo típico de detección y aprovisionamiento:
+### Diagrama de Flujo Simplificado
+
+El siguiente esquema ilustra la arquitectura de integración y el flujo de datos principal:
 
 ```mermaid
-sequenceDiagram
-    participant CRM as ISP-Cube (CRM)
-    participant SCH as Scheduler
-    participant ORCH as Orquestador (Core)
-    participant GIS as GeoGrid (OSS)
-    participant DB as Auditoría (DB)
+graph LR
+    ISP["ISP-Cube<br/>(CRM Comercial)"] -->|Nuevas Altas| SCH(Detector Automático)
+    SCH -->|Procesa| ORCH["Orquestador<br/>(Middleware)"]
+    
+    ORCH -->|1. Valida| DB[(Estado Interno)]
+    ORCH -->|2. Provisiona| GEO["GeoGrid<br/>(GIS Técnico)"]
+    
+    ORCH -.->|3. Métricas| GRAF["Grafana<br/>(Monitoreo KPIs)"]
 
-    Note over CRM, DB: Ciclo de Sincronización Automática
-
-    SCH->>CRM: 1. Polling: ¿Nuevos Logs? (Auth Tkn)
-    activate CRM
-    CRM-->>SCH: Lista de Eventos (JSON)
-    deactivate CRM
-
-    loop Por cada Evento Detectado
-        SCH->>ORCH: 2. Procesar Alta/Baja
-        activate ORCH
-        
-        ORCH->>ORCH: 3. Sanitización de Datos (Heurística)
-        
-        alt Datos Inválidos (ej. Coordenadas Error)
-            ORCH->>DB: Registrar Incidente (Requiere Intervención)
-        else Datos Válidos
-            ORCH->>GIS: 4. Consultar Factibilidad de Red
-            activate GIS
-            GIS-->>ORCH: Estado de Caja/Puerto
-            deactivate GIS
-
-            alt Sin Capacidad / Error
-                ORCH->>DB: Registrar Incidente Técnico
-            else Viable
-                ORCH->>GIS: 5. Ejecutar Aprovisionamiento (Drop)
-                GIS-->>ORCH: Confirmación (ID GIS)
-                ORCH->>DB: 6. Cerrar Auditoría Exitosa
-            end
-        end
-        deactivate ORCH
-    end
+    %% Estilos visuales
+    style ISP fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style GEO fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style ORCH fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style GRAF fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style SCH fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style DB fill:#e1bee7,stroke:#4a148c,stroke-width:2px
 ```
+
+**Leyenda de Colores:**
+| Color | Significado |
+| :--- | :--- |
+| 🔵 Azul | Sistemas externos (APIs de terceros) |
+| 🟣 Violeta | Componentes de infraestructura (Scheduler/DB) |
+| 🟠 Naranja | Núcleo del Orquestador (Lógica de Negocio) |
+| 🟢 Verde | Observabilidad y Monitoreo |
 
 ---
 
