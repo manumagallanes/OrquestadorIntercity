@@ -98,7 +98,7 @@ async def create_customer_event(
 )
 async def get_customer_events(
     lookback_days: int = Query(
-        default=30,
+        default=365,
         ge=1,
         le=365,
         description="Cantidad de días hacia atrás a considerar.",
@@ -135,7 +135,7 @@ async def get_customer_events(
     summary="Totales de altas y bajas por zona",
 )
 async def get_customer_events_summary(
-    lookback_days: int = Query(default=30, ge=1, le=365),
+    lookback_days: int = Query(default=365, ge=1, le=365),
     zone: Optional[str] = Query(default=None),
     event_type: Optional[Literal["alta", "baja"]] = Query(default=None),
     source: Optional[str] = Query(default=None),
@@ -170,7 +170,7 @@ async def get_customer_events_summary(
     summary="Totales agregados de altas/bajas/neto",
 )
 async def get_customer_event_metrics(
-    lookback_days: int = Query(default=30, ge=1, le=365),
+    lookback_days: int = Query(default=365, ge=1, le=365),
     zone: Optional[str] = Query(default=None),
     event_type: Optional[Literal["alta", "baja"]] = Query(default=None),
     source: Optional[str] = Query(default=None),
@@ -193,7 +193,7 @@ async def get_customer_event_metrics(
     summary="Serie temporal de altas y bajas por zona",
 )
 async def get_customer_events_time_series(
-    lookback_days: int = Query(default=30, ge=1, le=365),
+    lookback_days: int = Query(default=365, ge=1, le=365),
     zone: Optional[str] = Query(default=None),
     source: Optional[str] = Query(default=None),
 ) -> List[Dict[str, Any]]:
@@ -255,7 +255,7 @@ async def get_customer_events_time_series(
     summary="Eventos georreferenciados segmentados por tipo",
 )
 async def get_customer_events_geo(
-    lookback_days: int = Query(default=30),
+    lookback_days: int = Query(default=365),
     zone: Optional[str] = Query(default=None),
     source: Optional[str] = Query(default=None),
 ) -> Dict[str, List[Dict[str, Any]]]:
@@ -294,7 +294,7 @@ async def get_customer_events_geo(
     summary="Eventos de alta con coordenadas resueltas",
 )
 async def get_customer_events_map_altas(
-    lookback_days: int = Query(default=30),
+    lookback_days: int = Query(default=365),
     zone: Optional[str] = Query(default=None),
     source: Optional[str] = Query(default=None),
 ) -> Dict[str, Any]:
@@ -315,7 +315,7 @@ async def get_customer_events_map_altas(
     summary="Eventos de baja con coordenadas resueltas",
 )
 async def get_customer_events_map_bajas(
-    lookback_days: int = Query(default=30),
+    lookback_days: int = Query(default=365),
     zone: Optional[str] = Query(default=None),
     source: Optional[str] = Query(default=None),
 ) -> Dict[str, Any]:
