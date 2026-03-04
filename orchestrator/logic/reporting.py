@@ -228,29 +228,36 @@ def _resolve_lookback_days(range_info: Dict[str, Any], payload_lookback: Any) ->
     except (TypeError, ValueError):
         pass
         
-    # Try range
-    if not range_info:
-        return 30
+    # Try to derive from Grafana time range
+    if range_info:
+        try:
+            raw_from = range_info.get("from") or ""
+            raw_to = range_info.get("to") or ""
+            # Parse ISO timestamps if available
+            dt_from = parse_iso8601(str(raw_from))
+            dt_to = parse_iso8601(str(raw_to))
+            delta = dt_to - dt_from
+            days = max(1, int(delta.total_seconds() / 86400) + 1)
+            return min(days, 365)
+        except Exception:
+            pass
     
-    try:
-        raw_from = range_info.get("from")
-        # Parse grafana time range... this is complex if it's "now-6h".
-        # Simplified logic as used in main.py:
-        # If it's iso string, calculate delta.
-        # This function wasn't fully shown in main.py snippet but implied.
-        # I'll implement a safe default.
-        return 30
-    except Exception:
-        return 30
+    # Default to 365 to always show all historical data
+    return 365
 
 
 def _event_with_resolved_coordinates(event: Dict[str, Any]) -> Dict[str, Any]:
+    from ..core.state import DEFAULT_COORDINATE_FALLBACK
     e = dict(event)
     if e.get("lat") is None or e.get("lon") is None:
         z = e.get("zone") or DEFAULT_ZONE_LABEL
         lat, lon = resolve_zone_coordinates(z)
+        # If zone resolution also fails, use geographic centroid as fallback
+        if lat is None or lon is None:
+            lat, lon = DEFAULT_COORDINATE_FALLBACK
         e["lat"] = lat
         e["lon"] = lon
+        e["coords_fallback"] = True
     return e
 
 
@@ -269,6 +276,7 @@ def _build_events_table_frame(ref_id: str, events: List[Dict[str, Any]]) -> Dict
     
     for e in events:
         if e.get("lat") is None or e.get("lon") is None:
+            # Skip truly unresolvable events
             continue
         try:
             parse_iso8601(e.get("timestamp"))
